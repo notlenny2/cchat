@@ -115,6 +115,9 @@ final class Store: ObservableObject {
             let data = try JSONEncoder().encode(StoreData(contacts: contacts, conversations: conversations))
             try data.write(to: Self.fileURL, options: [.atomic])
         } catch { Log.error("store save failed: \(error)") }
+        // Dock icon shows how many chats are waiting on the user.
+        let waiting = conversations.filter { $0.needsYou != nil && !$0.hidden }.count
+        NSApp?.dockTile.badgeLabel = waiting > 0 ? "\(waiting)" : nil
     }
 
     // MARK: Lookup
@@ -436,6 +439,7 @@ final class Store: ObservableObject {
         var m = Message(senderId: nil, text: text, attachments: attachments.isEmpty ? nil : attachments)
         m.from = from
         conversations[i].messages.append(m)
+        if from == nil { conversations[i].needsYou = nil }
         if from != nil && selectedId != convId { conversations[i].unread = true }
         conversations[i].suggestions = []
         if everyone {
@@ -706,7 +710,8 @@ final class Store: ObservableObject {
             } else {
                 let (parsed, next) = Self.parse(result.text)
                 let (withoutOpens, opens) = Self.extractOpens(parsed)
-                let (body, refs) = Media.extract(from: withoutOpens)
+                let (withoutNeeds, needs) = Self.extractNeeds(withoutOpens)
+                let (body, refs) = Media.extract(from: withoutNeeds)
                 var media: [String] = []
                 for r in refs { if let p = await Media.importRef(r, relativeTo: agent.projectPath) { media.append(p) } }
                 if refs.count > media.count { Log.error("\(refs.count - media.count) of \(refs.count) media refs from \(agent.name) couldn't be shown") }
@@ -717,6 +722,7 @@ final class Store: ObservableObject {
                     if !next.isEmpty { conversations[j].suggestions = next }
                     if selectedId != convId { conversations[j].unread = true }
                 }
+                if let needs { conversations[j].needsYou = needs.isEmpty ? "\(displayName(agent)) is waiting on you" : needs }
                 for open in opens {
                     if let made = openSubChat(asked: agent, name: open.name, role: open.role, message: open.message, like: conv),
                        let j2 = index(of: convId) {
@@ -726,6 +732,7 @@ final class Store: ObservableObject {
                 if !result.deniedTools.isEmpty {
                     let tools = Array(Set(result.deniedTools)).sorted().joined(separator: ", ")
                     conversations[j].messages.append(Message(senderId: agentId, text: "\(displayName(agent)) was blocked from using: \(tools). Turn on Full Access in their info if you trust it.", kind: .system))
+                    if conversations[j].needsYou == nil { conversations[j].needsYou = "\(displayName(agent)) was blocked and needs permission" }
                 }
             }
             // Still holding the project folder, so nothing else runs in it while memory is condensed.
@@ -803,6 +810,11 @@ final class Store: ObservableObject {
         - To show \(me) a picture or video (one you made, rendered, downloaded or found), put it on its own line as
           <<show: /absolute/path/to/file.png>> (a web link works too). cChat displays it right in the chat.
           This is the one place a file path is fine.
+        - When your reply stops and waits on \(me) (you need a decision, an OK before something destructive,
+          costly or outward-facing, a login, or info only \(me) has), put this on its own line:
+          <<needs you: a few words on what you need>>
+          cChat marks the chat "Needs you" so \(me) spots it among many chats. Skip it when you finished the work and
+          are only offering ideas.
         - At the very end of every reply add one line exactly like this:
         <<next: first idea | second idea | third idea>>
         These are 2 or 3 things \(me) will most likely want next, under 6 words each, written the way \(me) would text them to you.
@@ -821,6 +833,19 @@ final class Store: ObservableObject {
             """
         }
         return s
+    }
+
+    /// `<<needs you: why>>` — the agent is stuck until the user answers. Returns the text without it, and the
+    /// reason (empty if none was given), or nil when there was no such line.
+    static func extractNeeds(_ text: String) -> (String, String?) {
+        let re = try! NSRegularExpression(pattern: #"<<\s*needs\s*(?:you)?\s*:?\s*(.*?)\s*>>"#, options: [.caseInsensitive])
+        let ns = text as NSString
+        let found = re.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard let first = found.first else { return (text, nil) }
+        let reason = String(ns.substring(with: first.range(at: 1)).prefix(80))
+        var body = text
+        for m in found.reversed() { body = (body as NSString).replacingCharacters(in: m.range, with: "") }
+        return (body.trimmingCharacters(in: .whitespacesAndNewlines), reason)
     }
 
     /// `<<open: Name | what they do | first message>>` — an agent starting a chat with a specialist

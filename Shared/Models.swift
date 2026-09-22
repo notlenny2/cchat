@@ -107,6 +107,9 @@ struct Conversation: Identifiable, Codable, Hashable {
     /// picks the agent (or agents) best suited to the message.
     var routeNext: Bool? = nil
     var isPinned: Bool { pinned == true }
+    /// An agent here is stuck until the user answers (a decision, an OK, a login, a permission).
+    /// Set from a `<<needs you: why>>` line or a blocked tool; cleared as soon as the user texts this chat.
+    var needsYou: String? = nil
 
     var isGroup: Bool { participantIds.count > 1 }
     var lastDate: Date { messages.last?.date ?? .distantPast }

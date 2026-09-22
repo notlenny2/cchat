@@ -145,6 +145,7 @@ struct ConversationRow: View {
                 HStack {
                     Text(store.title(for: conv)).font(.headline).lineLimit(1).foregroundStyle(Clay.ink)
                     EngineBadge(conv: conv)
+                    if conv.needsYou != nil { NeedsYouTag() }
                     Spacer()
                     Text(conv.messages.last.map { shortDate($0.date) } ?? "")
                         .font(.caption).foregroundStyle(.secondary)
@@ -160,6 +161,8 @@ struct ConversationRow: View {
                             Text(c.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
+                } else if let why = conv.needsYou {
+                    Text(why).font(.subheadline).foregroundStyle(Clay.ink).lineLimit(2)
                 } else {
                     Text(preview).font(.subheadline).foregroundStyle(Clay.inkSoft).lineLimit(2)
                 }
@@ -204,7 +207,7 @@ struct PinnedGrid: View {
                                         .offset(x: 8, y: -4)
                                 }
                             }
-                            .overlay(Circle().stroke(selected == c.id ? Palette.blue : .clear, lineWidth: 2.5).padding(-3))
+                            .overlay(Circle().stroke(selected == c.id ? Palette.blue : c.needsYou != nil ? NeedsYouTag.color : .clear, lineWidth: 2.5).padding(-3))
                         HStack(spacing: 4) {
                             if c.unread { Circle().fill(Palette.blue).frame(width: 7, height: 7) }
                             Text(store.title(for: c)).font(.caption).lineLimit(1)

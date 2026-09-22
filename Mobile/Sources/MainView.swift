@@ -121,6 +121,7 @@ struct Row: View {
                         Text("Codex").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.black))
                     }
+                    if conv.needsYou != nil { NeedsYouTag() }
                     Spacer()
                     Text(conv.messages.last.map { shortDate($0.date) } ?? "").font(.caption).foregroundStyle(.secondary)
                 }
@@ -129,6 +130,8 @@ struct Row: View {
                 } else if client.typing(in: conv.id) != nil {
                     TypingDots(dot: 6).padding(.horizontal, 9).padding(.vertical, 6)
                         .clayCapsule(Clay.cream, depth: 0.6)
+                } else if let why = conv.needsYou {
+                    Text(why).font(.subheadline).foregroundStyle(Clay.ink).lineLimit(2)
                 } else {
                     Text(preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -152,6 +155,7 @@ struct PinnedCell: View {
     var body: some View {
         VStack(spacing: 5) {
             GroupAvatar(ids: conv.participantIds, size: 64)
+                .overlay(Circle().stroke(conv.needsYou != nil ? NeedsYouTag.color : .clear, lineWidth: 2.5).padding(-3))
                 .overlay(alignment: .topTrailing) {
                     if client.typing(in: conv.id) != nil {
                         TypingDots(dot: 4).padding(.horizontal, 6).padding(.vertical, 5)

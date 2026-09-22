@@ -61,6 +61,17 @@ enum Clay {
     ]
 }
 
+/// "Needs you": a chat where an agent can't go on until the user answers. Amber in both builds, so it never
+/// blends into the accent color.
+struct NeedsYouTag: View {
+    static let color = Color(red: 0.91, green: 0.53, blue: 0.20)
+    var body: some View {
+        Text("Needs you").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Self.color))
+            .fixedSize()
+    }
+}
+
 /// A shape made of clay: a slightly lighter top, a highlight along the top edge, a darker lip along
 /// the bottom, and a soft warm shadow underneath.
 struct ClaySurface<S: InsettableShape>: View {
