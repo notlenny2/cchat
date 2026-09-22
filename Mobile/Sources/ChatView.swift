@@ -13,6 +13,8 @@ struct ChatView: View {
                 transcript(conv)
                 composer(conv)
             }
+            .background(Clay.canvas)
+            .foregroundStyle(Clay.ink)
             .navigationTitle(client.title(conv))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -58,8 +60,8 @@ struct ChatView: View {
                     if let t = client.typing(in: convId) {
                         HStack(alignment: .bottom, spacing: 8) {
                             if conv.isGroup { Avatar(contact: client.contact(t), size: 28) }
-                            TypingDots().padding(.horizontal, 14).padding(.vertical, 11)
-                                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(uiColor: .secondarySystemBackground)))
+                            TypingDots().padding(.horizontal, 15).padding(.vertical, 12)
+                                .clay(Clay.cream, radius: 20)
                             Spacer()
                         }
                         .padding(.top, 6)
@@ -82,9 +84,9 @@ struct ChatView: View {
                     HStack(spacing: 8) {
                         ForEach(conv.suggestions, id: \.self) { s in
                             Button { client.send(s, in: convId) } label: {
-                                Text(s).font(.callout).padding(.horizontal, 12).padding(.vertical, 7)
-                                    .foregroundStyle(Palette.blue)
-                                    .background(Capsule().strokeBorder(Palette.blue.opacity(0.6)))
+                                Text(s).font(.callout.weight(.medium)).padding(.horizontal, 13).padding(.vertical, 8)
+                                    .foregroundStyle(Clay.terracotta)
+                                    .clayCapsule(Clay.cream, depth: 0.7)
                             }
                         }
                     }
@@ -95,22 +97,29 @@ struct ChatView: View {
                 TextField("cChat", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .focused($focused)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.secondary.opacity(0.35)))
+                    .padding(.horizontal, 15).padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Clay.cream)
+                            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(LinearGradient(colors: [Clay.shadow.opacity(0.22), .white.opacity(0.6)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5))
+                    )
                 Button {
                     let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !t.isEmpty else { return }
                     draft = ""
                     client.send(t, in: convId)
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 32))
-                        .foregroundStyle(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.secondary.opacity(0.4) : Palette.blue)
+                    let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    Image(systemName: "arrow.up").font(.system(size: 16, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white.opacity(empty ? 0.7 : 1))
+                        .frame(width: 38, height: 38)
+                        .background(ClaySurface(shape: Circle(), color: empty ? Clay.inkSoft.opacity(0.45) : Clay.terracotta, depth: empty ? 0.4 : 1))
                 }
             }
             .padding(.horizontal, 12)
         }
         .padding(.vertical, 8)
-        .background(.bar)
+        .background(Clay.sidebar.opacity(0.6))
     }
 }
 
@@ -147,7 +156,7 @@ struct Bubble: View {
                             Text(rendered)
                                 .textSelection(.enabled)
                                 .padding(.horizontal, 13).padding(.vertical, 8)
-                                .foregroundStyle(mine ? .white : .primary)
+                                .foregroundStyle(mine ? .white : Clay.ink)
                                 .background(bubble)
                         }
                     }
@@ -168,10 +177,10 @@ struct Bubble: View {
     }
 
     @ViewBuilder private var bubble: some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        if mine { shape.fill(message.from == nil ? Palette.blue : Color(red: 0.55, green: 0.36, blue: 0.96)) }
-        else if message.kind == .error { shape.fill(Color.red.opacity(0.15)) }
-        else { shape.fill(Color(uiColor: .secondarySystemBackground)) }
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        if mine { ClaySurface(shape: shape, color: message.from == nil ? Clay.terracotta : Clay.plum) }
+        else if message.kind == .error { ClaySurface(shape: shape, color: Color(red: 0.96, green: 0.80, blue: 0.76), depth: 0.6) }
+        else { ClaySurface(shape: shape, color: Clay.cream) }
     }
 }
 

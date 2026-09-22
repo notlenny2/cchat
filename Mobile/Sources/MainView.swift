@@ -75,10 +75,12 @@ struct MainView: View {
                     } isTargeted: { on in
                         if on { dropTarget = c.id } else if dropTarget == c.id { dropTarget = nil }
                     }
-                    .listRowBackground(dropTarget == c.id ? Palette.blue.opacity(0.2) : nil)
+                    .listRowBackground(dropTarget == c.id ? Palette.blue.opacity(0.2) : Color.clear)
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Clay.sidebar)
         .overlay {
             if client.snapshot == nil {
                 ProgressView("Reaching \(client.pairing?.macName ?? "your Mac")…")
@@ -123,8 +125,8 @@ struct Row: View {
                     Text(conv.messages.last.map { shortDate($0.date) } ?? "").font(.caption).foregroundStyle(.secondary)
                 }
                 if client.typing(in: conv.id) != nil {
-                    TypingDots(dot: 5).padding(.horizontal, 8).padding(.vertical, 6)
-                        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                    TypingDots(dot: 6).padding(.horizontal, 9).padding(.vertical, 6)
+                        .clayCapsule(Clay.cream, depth: 0.6)
                 } else {
                     Text(preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -151,7 +153,7 @@ struct PinnedCell: View {
                 .overlay(alignment: .topTrailing) {
                     if client.typing(in: conv.id) != nil {
                         TypingDots(dot: 4).padding(.horizontal, 6).padding(.vertical, 5)
-                            .background(Capsule().fill(Color(uiColor: .secondarySystemBackground)).shadow(radius: 1))
+                            .clayCapsule(Clay.cream, depth: 0.7)
                             .offset(x: 8, y: -4)
                     } else if conv.unread {
                         Circle().fill(Palette.blue).frame(width: 13, height: 13)

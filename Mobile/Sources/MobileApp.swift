@@ -15,6 +15,8 @@ struct CMessageMobileApp: App {
                 }
             }
             .environmentObject(client)
+            .fontDesign(.rounded)
+            .tint(Clay.terracotta)
             .onOpenURL { _ = client.pair(with: $0) }
             .onChange(of: phase) { _, p in
                 if p == .active { client.start() } else if p == .background { client.stop() }
@@ -25,17 +27,8 @@ struct CMessageMobileApp: App {
 }
 
 enum Palette {
-    static let blue = Color(red: 0.04, green: 0.52, blue: 1.0)
-    static let gradients: [[Color]] = [
-        [Color(red: 0.55, green: 0.60, blue: 0.68), Color(red: 0.40, green: 0.44, blue: 0.52)],
-        [Color(red: 0.99, green: 0.62, blue: 0.35), Color(red: 0.96, green: 0.40, blue: 0.24)],
-        [Color(red: 0.42, green: 0.78, blue: 0.98), Color(red: 0.16, green: 0.52, blue: 0.94)],
-        [Color(red: 0.55, green: 0.88, blue: 0.50), Color(red: 0.20, green: 0.66, blue: 0.36)],
-        [Color(red: 0.84, green: 0.56, blue: 0.98), Color(red: 0.58, green: 0.30, blue: 0.90)],
-        [Color(red: 1.00, green: 0.55, blue: 0.66), Color(red: 0.92, green: 0.26, blue: 0.44)],
-        [Color(red: 0.99, green: 0.84, blue: 0.36), Color(red: 0.95, green: 0.62, blue: 0.14)],
-        [Color(red: 0.40, green: 0.88, blue: 0.84), Color(red: 0.10, green: 0.62, blue: 0.64)],
-    ]
+    static let blue = Clay.terracotta
+    static let gradients: [[Color]] = Clay.tones
 }
 
 struct Avatar: View {
@@ -49,8 +42,11 @@ struct Avatar: View {
         ZStack {
             if let icon {
                 Image(uiImage: icon).resizable().scaledToFill().frame(width: size, height: size).clipShape(Circle())
+                    .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .black.opacity(0.12)], startPoint: .top, endPoint: .bottom), lineWidth: 1.2))
+                    .shadow(color: Clay.shadow.opacity(0.22), radius: 4, y: 3)
             } else {
-                Circle().fill(LinearGradient(colors: g, startPoint: .top, endPoint: .bottom))
+                ClaySurface(shape: Circle(), color: g[1], depth: 0.8)
+                    .overlay(Circle().fill(LinearGradient(colors: [g[0].opacity(0.9), .clear], startPoint: .top, endPoint: .center)))
                 Text(contact?.initials ?? "…").font(.system(size: size * 0.4, weight: .semibold, design: .rounded)).foregroundStyle(.white)
             }
         }
@@ -88,18 +84,8 @@ struct GroupAvatar: View {
 }
 
 struct TypingDots: View {
-    var dot: CGFloat = 7
-    var body: some View {
-        TimelineView(.animation) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate * 5
-            HStack(spacing: dot * 0.55) {
-                ForEach(0..<3) { i in
-                    Circle().fill(Color.secondary).frame(width: dot, height: dot)
-                        .opacity(0.3 + 0.7 * max(0, sin(t - Double(i) * 0.9)))
-                }
-            }
-        }
-    }
+    var dot: CGFloat = 8
+    var body: some View { ClayTypingDots(dot: dot) }
 }
 
 func shortDate(_ d: Date) -> String {

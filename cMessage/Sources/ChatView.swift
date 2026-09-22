@@ -16,16 +16,17 @@ struct ChatView: View {
         if let conv {
             VStack(spacing: 0) {
                 header(conv)
-                Divider()
+                    .background(Clay.sidebar.opacity(0.55))
+                    .overlay(alignment: .bottom) { Rectangle().fill(Clay.shadow.opacity(0.08)).frame(height: 1) }
                 transcript(conv)
                 composer(conv)
             }
             .overlay {
                 if dropping {
-                    RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.blue, style: StrokeStyle(lineWidth: 3, dash: [8]))
-                        .background(Palette.blue.opacity(0.06))
+                    RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Clay.terracotta, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                        .background(Clay.terracotta.opacity(0.06))
                         .overlay(Label("Drop to send to \(store.title(for: conv))", systemImage: "photo").font(.title3).padding(12)
-                                    .background(.regularMaterial, in: Capsule()))
+                                    .clayCapsule(Clay.cream))
                         .padding(8).allowsHitTesting(false)
                 }
             }
@@ -36,7 +37,8 @@ struct ChatView: View {
                 }
                 return true
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(Clay.canvas)
+            .foregroundStyle(Clay.ink)
             .sheet(isPresented: $showInfo) { InfoSheet(convId: convId).environmentObject(store) }
             .onAppear { focused = true; store.markRead(convId) }
         }
@@ -160,10 +162,10 @@ struct ChatView: View {
                     HStack(spacing: 8) {
                         ForEach(conv.suggestions, id: \.self) { s in
                             Button { store.send(s, in: convId) } label: {
-                                Text(s).font(.callout)
-                                    .padding(.horizontal, 12).padding(.vertical, 6)
-                                    .foregroundStyle(Palette.blue)
-                                    .background(Capsule().strokeBorder(Palette.blue.opacity(0.6), lineWidth: 1))
+                                Text(s).font(.callout.weight(.medium))
+                                    .padding(.horizontal, 13).padding(.vertical, 7)
+                                    .foregroundStyle(Clay.terracotta)
+                                    .clayCapsule(Clay.cream, depth: 0.7)
                             }
                             .buttonStyle(.plain)
                         }
@@ -178,7 +180,8 @@ struct ChatView: View {
                         ForEach(attached, id: \.self) { p in
                             if let img = IconCache.image(p) {
                                 Image(nsImage: img).resizable().scaledToFill().frame(width: 64, height: 64)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .padding(3).clay(Clay.cream, radius: 14, depth: 0.7)
                                     .overlay(alignment: .topTrailing) {
                                         Button { attached.removeAll { $0 == p } } label: {
                                             Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.6))
@@ -196,12 +199,20 @@ struct ChatView: View {
                     .lineLimit(1...8)
                     .focused($focused)
                     .onSubmit(sendDraft)
-                    .padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.secondary.opacity(0.35)))
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(
+                        // Pressed into the clay: a shallow well with the shadow on top, light at the bottom.
+                        RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Clay.cream)
+                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(LinearGradient(colors: [Clay.shadow.opacity(0.22), .white.opacity(0.6)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5))
+                    )
                 Button(action: sendDraft) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty ? Color.secondary.opacity(0.4) : Palette.blue)
+                    let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 15, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white.opacity(empty ? 0.7 : 1))
+                        .frame(width: 34, height: 34)
+                        .background(ClaySurface(shape: Circle(), color: empty ? Clay.inkSoft.opacity(0.45) : Clay.terracotta, depth: empty ? 0.4 : 1))
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.return, modifiers: .command)
@@ -267,7 +278,7 @@ struct MessageRow: View {
         Text(rendered)
             .textSelection(.enabled)
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .foregroundStyle(mine ? .white : .primary)
+            .foregroundStyle(mine ? .white : Clay.ink)
             .background(bubble)
     }
 
@@ -277,10 +288,10 @@ struct MessageRow: View {
     }
 
     @ViewBuilder private var bubble: some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        if mine { shape.fill(message.from == nil ? Palette.blue : Color(red: 0.55, green: 0.36, blue: 0.96)) }
-        else if message.kind == .error { shape.fill(Color.red.opacity(0.15)) }
-        else { shape.fill(Color(nsColor: .controlBackgroundColor)).overlay(shape.strokeBorder(Color.secondary.opacity(0.12))) }
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        if mine { ClaySurface(shape: shape, color: message.from == nil ? Clay.terracotta : Clay.plum) }
+        else if message.kind == .error { ClaySurface(shape: shape, color: Color(red: 0.96, green: 0.80, blue: 0.76), depth: 0.6) }
+        else { ClaySurface(shape: shape, color: Clay.cream) }
     }
 }
 
@@ -291,9 +302,9 @@ struct TypingRow: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             if isGroup { Avatar(contact: contact, size: 28) }
-            TypingDots(dot: 7)
-                .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
+            TypingDots(dot: 8)
+                .padding(.horizontal, 15).padding(.vertical, 12)
+                .clay(Clay.cream, radius: 20)
             if isGroup, let c = contact { Text("\(c.name) is typing").font(.caption2).foregroundStyle(.secondary) }
             Spacer()
         }
@@ -306,15 +317,6 @@ struct TypingDots: View {
     var dot: CGFloat = 7
 
     var body: some View {
-        TimelineView(.animation) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate * 5
-            HStack(spacing: dot * 0.55) {
-                ForEach(0..<3) { i in
-                    Circle().fill(Color.secondary)
-                        .frame(width: dot, height: dot)
-                        .opacity(0.3 + 0.7 * max(0, sin(t - Double(i) * 0.9)))
-                }
-            }
-        }
+        ClayTypingDots(dot: dot)
     }
 }
