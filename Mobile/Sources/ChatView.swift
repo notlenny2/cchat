@@ -26,6 +26,15 @@ struct ChatView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        if conv.isGroup {
+                            Button {
+                                client.setChatter(convId, on: !conv.letThemTalk)
+                            } label: {
+                                Label(conv.letThemTalk ? "Stop them talking to each other" : "Let them talk to each other",
+                                      systemImage: conv.letThemTalk ? "person.2.slash" : "person.2.wave.2")
+                            }
+                            Divider()
+                        }
                         ForEach(client.models(for: conv.engine ?? .claude)) { m in
                             Button { client.setModel(convId, m.id) } label: {
                                 if (conv.model ?? "") == m.id { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }

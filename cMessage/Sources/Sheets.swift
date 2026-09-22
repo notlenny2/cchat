@@ -307,8 +307,15 @@ struct NewMessageSheet: View {
                     }
                     .fixedSize()
                 }
-            } else if let e = existing, e.usesCodex {
-                Text("This chat runs on Codex.").font(.caption).foregroundStyle(.secondary)
+            } else if let e = existing {
+                if e.isGroup {
+                    Toggle("Let them talk to each other", isOn: Binding(
+                        get: { store.conversation(e.id)?.letThemTalk ?? true },
+                        set: { store.setChatter(e.id, on: $0) }))
+                    Text("After they answer you, whoever has something to add can reply to the others for a few turns.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if e.usesCodex { Text("This chat runs on Codex.").font(.caption).foregroundStyle(.secondary) }
             }
             List {
                 if existing == nil {

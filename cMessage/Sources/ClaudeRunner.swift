@@ -41,12 +41,15 @@ enum ClaudeRunner {
         return "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     }()
 
-    static var claudePath: String? {
+    /// Found once and remembered. It used to be looked up per call, and a passing disk hiccup made a
+    /// turn fail with "couldn't find Claude Code" on a Mac where it plainly was installed (2026-09-22).
+    private static let foundClaude: String? = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let fixed = ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.claude/local/claude"]
         let fromPath = loginPath.split(separator: ":").map { "\($0)/claude" }
         return (fixed + fromPath).first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    }()
+    static var claudePath: String? { foundClaude }
 
     static func run(prompt: String, cwd: String, sessionId: String?, systemPrompt: String,
                     model: String, fullAccess: Bool, fork: Bool = false, extraDirs: [String] = []) async throws -> ClaudeResult {
@@ -174,11 +177,12 @@ enum ClaudeRunner {
         return out
     }
 
-    static var codexPath: String? {
+    private static let foundCodex: String? = {
         let fixed = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
         let fromPath = loginPath.split(separator: ":").map { "\($0)/codex" }
         return (fixed + fromPath).first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    }()
+    static var codexPath: String? { foundCodex }
 
     /// One turn of an OpenAI Codex agent (`codex exec --json`), shaped like a Claude result so the
     /// rest of the app doesn't care which one answered. Codex has no system-prompt flag, so cChat's

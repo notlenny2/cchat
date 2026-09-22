@@ -79,6 +79,10 @@ struct Conversation: Identifiable, Codable, Hashable {
     var usesCodex: Bool { engine == .codex }
     /// Model picked for this chat. nil = the contact's setting (Claude) or Codex's own default.
     var model: String? = nil
+    /// In a group: after answering the user, let the agents carry on with each other for a few turns.
+    /// nil = on (the point of a group chat); false = they only ever answer the user.
+    var chatter: Bool? = nil
+    var letThemTalk: Bool { chatter ?? true }
     /// Group photo the user dragged onto the chat header (copied into cMessage's photos folder).
     var photoPath: String? = nil
     var messages: [Message] = []

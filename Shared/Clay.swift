@@ -24,6 +24,19 @@ enum Clay {
         #endif
     }
 
+    // Public release = warm orange-and-white clay. the user's own build (CCHAT_PERSONAL) = the same clay in ice blue,
+    // so the two are never confused on one Mac. The names stay the warm ones; `terracotta` is just "the accent".
+    #if CCHAT_PERSONAL
+    static let canvas     = dyn((0.929, 0.957, 0.980), (0.086, 0.114, 0.149))   // frosted table
+    static let sidebar    = dyn((0.831, 0.910, 0.965), (0.106, 0.145, 0.192))   // ice slab
+    static let cream      = dyn((0.973, 0.988, 1.000), (0.153, 0.204, 0.263))   // agent bubbles: snow
+    static let peach      = dyn((0.780, 0.886, 0.961), (0.180, 0.243, 0.314))
+    static let terracotta = dyn((0.290, 0.604, 0.851), (0.431, 0.702, 0.914))   // the user, accents: glacier blue
+    static let plum       = dyn((0.604, 0.463, 0.769), (0.557, 0.427, 0.722))   // other agents writing for the user
+    static let ink        = dyn((0.129, 0.212, 0.294), (0.918, 0.953, 0.984))   // text on ice
+    static let inkSoft    = dyn((0.376, 0.471, 0.557), (0.627, 0.706, 0.780))
+    static let shadow     = dyn((0.157, 0.302, 0.439), (0.0, 0.0, 0.0))
+    #else
     static let canvas     = dyn((0.953, 0.925, 0.894), (0.145, 0.118, 0.102))   // the table the clay sits on
     static let sidebar    = dyn((0.965, 0.878, 0.816), (0.180, 0.141, 0.118))   // peach slab
     static let cream      = dyn((0.988, 0.965, 0.925), (0.263, 0.212, 0.180))   // agent bubbles
@@ -33,6 +46,7 @@ enum Clay {
     static let ink        = dyn((0.290, 0.212, 0.176), (0.957, 0.914, 0.867))   // text on clay
     static let inkSoft    = dyn((0.545, 0.447, 0.392), (0.745, 0.671, 0.612))
     static let shadow     = dyn((0.420, 0.259, 0.180), (0.0, 0.0, 0.0))
+    #endif
 
     /// Avatar clays: terracotta, sage, butter, clay blue, lilac, cocoa, apricot, teal.
     static let tones: [[Color]] = [

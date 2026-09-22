@@ -254,6 +254,8 @@ final class RemoteServer: ObservableObject {
                 res.convId = store.selectedId
                 store.selectedId = before
             } else { res.ok = false; res.error = "Couldn't make that project." }
+        case .chatter:
+            if let c = req.conv { store.setChatter(c, on: req.wait ?? true) } else { res.ok = false }
         case .setModel:
             if let c = req.conv { store.setModel(c, req.model) } else { res.ok = false }
         case .media:

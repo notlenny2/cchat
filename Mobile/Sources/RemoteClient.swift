@@ -120,6 +120,8 @@ final class RemoteClient: ObservableObject {
         return url
     }
 
+    func setChatter(_ conv: UUID, on: Bool) { fire(RPCRequest(op: .chatter, conv: conv, wait: on)) }
+
     func setModel(_ conv: UUID, _ model: String) { fire(RPCRequest(op: .setModel, conv: conv, model: model)) }
 
     func models(for engine: Engine) -> [ModelOption] {

@@ -33,6 +33,34 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: NO
+        # the user's own build: ice blue look and icon. The public release (cChatPublic) is orange and white.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) CCHAT_PERSONAL"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconPersonal
+  # The public release anyone can download: warm orange-and-white clay, its own bundle id. Built into
+  # Release-public so it never lands at build/Build/Products/Release/cChat.app, which the user's app installs from.
+  cChatPublic:
+    type: application
+    platform: macOS
+    sources:
+      - Shared
+      - cMessage/Sources
+      - cMessage/Resources
+    info:
+      path: cMessage/Info-Public.plist
+      properties:
+        CFBundleDisplayName: cChat
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.productivity
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.cchat
+        PRODUCT_NAME: cChat
+        CONFIGURATION_BUILD_DIR: "$(BUILD_DIR)/$(CONFIGURATION)-public"
+        ENABLE_APP_SANDBOX: NO
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   cMessageMobile:
     type: application
@@ -67,7 +95,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         DEVELOPMENT_TEAM: XXXXXXXXXX
         CODE_SIGN_STYLE: Automatic
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) CCHAT_PERSONAL"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconPersonal
   cchat:
     type: tool
     platform: macOS
