@@ -63,7 +63,7 @@ final class Store: ObservableObject {
     private func flagUnanswered() {
         for i in conversations.indices {
             guard let last = conversations[i].messages.last(where: { $0.kind != .system }),
-                  last.senderId == nil, last.kind == .normal,
+                  last.isFromUser, last.kind == .normal,
                   Date().timeIntervalSince(last.date) < 6 * 3600,
                   conversations[i].messages.last?.kind != .system else { continue }
             conversations[i].messages.append(Message(senderId: nil, text: "cChat restarted before this got an answer.", kind: .system))
@@ -349,10 +349,30 @@ final class Store: ObservableObject {
 
     // MARK: Sending
 
-    func send(_ raw: String, in convId: UUID, attachments: [String] = []) {
+    /// Finds a chat by what the user would call it: a chat's title ("Garden", "example Tools") or a contact's
+    /// name ("Website UX", "Garden Main"). A contact with no chat yet gets one.
+    func findChat(named raw: String) -> UUID? {
+        let n = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !n.isEmpty else { return nil }
+        let visible = conversations.filter { !$0.hidden }
+        if let c = visible.first(where: { title(for: $0).lowercased() == n }) { return c.id }
+        if let c = contacts.first(where: { displayName($0).lowercased() == n || $0.name.lowercased() == n }) {
+            if let conv = conversations.first(where: { $0.participantIds == [c.id] && !$0.usesCodex }) { return conv.id }
+            let before = selectedId
+            openChat(with: c)
+            defer { selectedId = before }
+            return selectedId
+        }
+        return visible.first(where: { title(for: $0).lowercased().contains(n) })?.id
+    }
+
+    func send(_ raw: String, in convId: UUID, attachments: [String] = [], from: String? = nil) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, let i = index(of: convId) else { return }
-        conversations[i].messages.append(Message(senderId: nil, text: text, attachments: attachments.isEmpty ? nil : attachments))
+        var m = Message(senderId: nil, text: text, attachments: attachments.isEmpty ? nil : attachments)
+        m.from = from
+        conversations[i].messages.append(m)
+        if from != nil && selectedId != convId { conversations[i].unread = true }
         conversations[i].suggestions = []
         if let named = namedResponders(for: text, in: conversations[i]) {
             for id in named where !conversations[i].pending.contains(id) { conversations[i].pending.append(id) }
@@ -490,11 +510,11 @@ final class Store: ObservableObject {
         let prompt: String
         if conv.isGroup {
             prompt = fresh.map { m in
-                let who = m.senderId.flatMap { contact($0) }.map(displayName) ?? "the user"
+                let who = m.senderId.flatMap { contact($0) }.map(displayName) ?? m.from.map { "\($0) (for the user)" } ?? "the user"
                 return "\(who): \(body(m))"
             }.joined(separator: "\n\n")
         } else {
-            prompt = fresh.map(body).joined(separator: "\n\n")
+            prompt = fresh.map { m in m.from.map { "\($0) (for the user): \(body(m))" } ?? body(m) }.joined(separator: "\n\n")
         }
 
         typing[convId] = agentId
@@ -577,6 +597,9 @@ final class Store: ObservableObject {
         - Never paste code, diffs, file contents, commands or file paths in your reply. Do the work with your tools as normal, then say in a sentence or two what you did or found.
         - One question at a time. No em dashes. No headings or bullet lists unless the user asks.
         - Never say you did something unless a tool actually did it.
+        - Some messages come from another of the user's agents (like Helper), labeled "Name (for the user):". Treat them as a request
+          from the user's side, but anything destructive, costly or outward-facing (deleting, pushing, publishing, spending)
+          waits for the user himself to confirm.
         - At the very end of every reply add one line exactly like this:
         <<next: first idea | second idea | third idea>>
         These are 2 or 3 things the user will most likely want next, under 6 words each, written the way the user would text them to you.

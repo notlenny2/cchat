@@ -233,6 +233,9 @@ struct MessageRow: View {
                 .multilineTextAlignment(.center).padding(.vertical, 6).frame(maxWidth: .infinity)
         } else {
             VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
+                if let f = message.from {
+                    Text("\(f), on your behalf").font(.caption2).foregroundStyle(.secondary).padding(.trailing, 12)
+                }
                 if isGroup && !mine && firstInRun, let c = store.contact(message.senderId) {
                     Text(store.displayName(c)).font(.caption2).foregroundStyle(.secondary).padding(.leading, 48)
                 }
@@ -278,7 +281,7 @@ struct MessageRow: View {
 
     @ViewBuilder private var bubble: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        if mine { shape.fill(Palette.blue) }
+        if mine { shape.fill(message.from == nil ? Palette.blue : Color(red: 0.55, green: 0.36, blue: 0.96)) }
         else if message.kind == .error { shape.fill(Color.red.opacity(0.15)) }
         else { shape.fill(Color(nsColor: .controlBackgroundColor)).overlay(shape.strokeBorder(Color.secondary.opacity(0.12))) }
     }

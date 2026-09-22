@@ -151,6 +151,7 @@ struct ConversationRow: View {
 
     private var preview: String {
         guard let m = conv.messages.last(where: { $0.kind != .system }) ?? conv.messages.last else { return "No messages yet" }
+        if let f = m.from { return "\(f): \(m.text)" }
         if conv.isGroup, let s = store.contact(m.senderId) { return "\(s.name): \(m.text)" }
         return m.text
     }

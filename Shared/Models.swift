@@ -38,6 +38,9 @@ struct Message: Identifiable, Codable, Hashable {
     var kind: Kind = .normal
     /// Pictures the user dragged in, stored as files in cMessage's own attachments folder.
     var attachments: [String]? = nil
+    /// Set when another agent (like Helper) sent this on the user's behalf, not the user himself. senderId is nil.
+    var from: String? = nil
+    var isFromUser: Bool { senderId == nil && from == nil }
 }
 
 /// Which AI runs the agents in a chat. Picked when the chat starts.

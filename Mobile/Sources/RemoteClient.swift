@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Security
+import Network
 
 /// Keeps the phone in step with the Mac. One long-poll loop asks "anything new since version N?"
 /// and the Mac answers as soon as something changes (or after 25 seconds). Actions are single
@@ -68,7 +69,12 @@ final class RemoteClient: ObservableObject {
                 } catch is CancellationError {
                     return
                 } catch {
-                    self.link = .offline(Self.describe(error))
+                    var why = Self.describe(error)
+                    if let p = self.pairing, !p.hosts.isEmpty,
+                       await Self.localNetworkDenied(host: p.hosts[self.hostIndex % p.hosts.count], port: p.port) {
+                        why = "iPhone is blocking cChat from your home network. Turn on Settings > Privacy & Security > Local Network > cChat."
+                    }
+                    self.link = .offline(why)
                     self.hostIndex += 1
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                 }
@@ -151,6 +157,25 @@ final class RemoteClient: ObservableObject {
     }
 
     enum ClientError: Error { case rejected, http(Int), mismatch }
+
+    /// Asks the network stack directly whether iOS is refusing local-network access for this app,
+    /// which otherwise just looks like "can't connect".
+    private static func localNetworkDenied(host: String, port: UInt16) async -> Bool {
+        await withCheckedContinuation { cont in
+            let conn = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+            var finished = false
+            func finish(_ v: Bool) { if !finished { finished = true; conn.cancel(); cont.resume(returning: v) } }
+            conn.stateUpdateHandler = { state in
+                switch state {
+                case .ready: finish(false)
+                case .waiting, .failed: finish(conn.currentPath?.unsatisfiedReason == .localNetworkDenied)
+                default: break
+                }
+            }
+            conn.start(queue: .global())
+            DispatchQueue.global().asyncAfter(deadline: .now() + 4) { finish(conn.currentPath?.unsatisfiedReason == .localNetworkDenied) }
+        }
+    }
 
     private static func describe(_ e: Error) -> String {
         switch e {

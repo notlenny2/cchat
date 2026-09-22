@@ -17,6 +17,16 @@ final class RemoteServer: ObservableObject {
     private weak var store: Store?
     private var listener: NWListener?
     private var key: Data?
+    /// Extra paired clients such as Helper: `clients/<Name>.key`, one key each so any one can be revoked
+    /// by deleting its file. The file name is how that client signs its messages in the chat.
+    static let clientsDir: URL = Store.fileURL.deletingLastPathComponent().appendingPathComponent("clients", isDirectory: true)
+    private func clientKeys() -> [(name: String, key: Data)] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: Self.clientsDir, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { $0.pathExtension == "key" }.compactMap { f in
+            guard let k = try? Data(contentsOf: f), k.count == 32 else { return nil }
+            return (f.deletingPathExtension().lastPathComponent, k)
+        }
+    }
     private var seenNonces: [String: TimeInterval] = [:]
     private var failures: [String: [TimeInterval]] = [:]
 
@@ -28,7 +38,7 @@ final class RemoteServer: ObservableObject {
         self.store = store
         key = try? Data(contentsOf: Self.keyURL)
         if key?.count != 32 { key = nil }
-        if key != nil { start() }
+        if key != nil || !clientKeys().isEmpty { start() }
     }
 
     /// Makes (or remakes) the pairing key. Remaking it disconnects every phone paired before.
@@ -156,8 +166,15 @@ final class RemoteServer: ObservableObject {
     // MARK: Requests
 
     private func handle(_ body: Data, peer: String) async -> (Int, Data) {
-        guard let key, let store else { return (401, Data()) }
-        guard let req = try? Seal.open(RPCRequest.self, from: body, key: key) else {
+        guard let store else { return (401, Data()) }
+        // The phone key first, then any paired agents. Whichever opens the request is who sent it.
+        var candidates: [(name: String?, key: Data)] = key.map { [(nil, $0)] } ?? []
+        candidates += clientKeys().map { ($0.name, $0.key) }
+        var opened: (req: RPCRequest, key: Data, client: String?)?
+        for c in candidates {
+            if let r = try? Seal.open(RPCRequest.self, from: body, key: c.key) { opened = (r, c.key, c.name); break }
+        }
+        guard let (req, key, client) = opened else {
             noteFailure(peer)
             Log.error("remote: rejected unreadable request from \(peer)")
             return (401, Data())
@@ -170,8 +187,10 @@ final class RemoteServer: ObservableObject {
             return (401, Data())
         }
         seenNonces[req.nonce] = now
-        lastClient = peer
-        lastSeen = Date()
+        if client == nil {
+            lastClient = peer
+            lastSeen = Date()
+        }
 
         var res = RPCResponse(nonce: req.nonce, ok: true)
         switch req.op {
@@ -183,7 +202,28 @@ final class RemoteServer: ObservableObject {
             }
             res.snapshot = snapshot(store)
         case .send:
-            if let c = req.conv, let t = req.text { store.send(t, in: c) } else { res.ok = false }
+            // An agent's key can only ever send as that agent, never as the user.
+            if let c = req.conv, let t = req.text { store.send(t, in: c, from: client) } else { res.ok = false }
+        case .ask:
+            guard let t = req.text, !t.isEmpty else { res.ok = false; res.error = "Nothing to send."; break }
+            guard let convId = req.conv ?? req.to.flatMap(store.findChat) else {
+                res.ok = false; res.error = "No chat or contact called \"\(req.to ?? "")\"."; break
+            }
+            let startCount = store.conversations.first { $0.id == convId }?.messages.count ?? 0
+            store.send(t, in: convId, from: client)
+            res.convId = convId
+            Log.info("remote: \(client ?? "phone") asked \(store.conversations.first { $0.id == convId }.map(store.title) ?? "?")")
+            if req.wait == true {
+                let deadline = Date().addingTimeInterval(15 * 60)
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                while store.isBusy(convId) && Date() < deadline { try? await Task.sleep(nanoseconds: 500_000_000) }
+                let msgs = store.conversations.first { $0.id == convId }?.messages.dropFirst(startCount + 1) ?? []
+                res.replies = msgs.filter { $0.senderId != nil }.map { m in
+                    let who = store.contact(m.senderId).map(store.displayName) ?? "Agent"
+                    return "\(who): \(m.text)"
+                }
+                if store.isBusy(convId) { res.error = "Still working after 15 minutes; check the chat later." }
+            }
         case .rename:
             if let c = req.conv { store.rename(c, to: req.text ?? "") } else { res.ok = false }
         case .pin:
@@ -217,7 +257,7 @@ final class RemoteServer: ObservableObject {
                 res.png = Self.thumbnail(path)
             }
         }
-        if !res.ok { res.error = "Missing details" }
+        if !res.ok && res.error == nil { res.error = "Missing details" }
         guard let out = try? Seal.close(res, key: key) else { return (500, Data()) }
         return (200, out)
     }

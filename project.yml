@@ -68,3 +68,14 @@ targets:
         DEVELOPMENT_TEAM: XXXXXXXXXX
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  cchat:
+    type: tool
+    platform: macOS
+    sources:
+      - Shared
+      - Cli
+    settings:
+      base:
+        PRODUCT_NAME: cchat
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage.cli
+        CODE_SIGN_IDENTITY: "-"

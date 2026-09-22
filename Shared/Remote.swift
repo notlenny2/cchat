@@ -9,7 +9,8 @@ import CryptoKit
 /// network can read the chats or send as the user. Requests carry a timestamp and a one-time nonce, and
 /// the Mac refuses anything stale or seen before, so a captured request can't be replayed.
 enum Remote {
-    static let port: UInt16 = 47800
+    /// CCHAT_PORT only exists so tests can run beside the live app.
+    static let port: UInt16 = UInt16(ProcessInfo.processInfo.environment["CCHAT_PORT"] ?? "") ?? 47800
     static let bonjourType = "_cmessage._tcp"
     static let maxClockSkew: TimeInterval = 120
     static let longPollSeconds: TimeInterval = 25
@@ -77,7 +78,7 @@ struct RemoteSnapshot: Codable {
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject, ask }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString
@@ -88,6 +89,10 @@ struct RPCRequest: Codable {
     var since: Int? = nil
     var model: String? = nil
     var engine: Engine? = nil
+    /// `ask`: which chat, by name ("Garden", "example Tools", "Website UX") when `conv` isn't known.
+    var to: String? = nil
+    /// `ask`: wait for the agents to answer and return what they said.
+    var wait: Bool? = nil
 }
 
 struct RPCResponse: Codable {
@@ -97,6 +102,8 @@ struct RPCResponse: Codable {
     var snapshot: RemoteSnapshot? = nil
     var convId: UUID? = nil
     var png: Data? = nil
+    /// `ask` with wait: the agents' replies, as "Name: text" lines.
+    var replies: [String]? = nil
 }
 
 enum Seal {
