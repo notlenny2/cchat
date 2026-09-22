@@ -33,6 +33,15 @@ struct ChatView: View {
                                 Label(conv.letThemTalk ? "Stop them talking to each other" : "Let them talk to each other",
                                       systemImage: conv.letThemTalk ? "person.2.slash" : "person.2.wave.2")
                             }
+                            if conv.participantIds.count > 2 {
+                                Menu {
+                                    ForEach(conv.participantIds, id: \.self) { id in
+                                        Button(client.contact(id)?.name ?? "Someone", role: .destructive) {
+                                            client.removeFromGroup(convId, id)
+                                        }
+                                    }
+                                } label: { Label("Take someone out", systemImage: "person.badge.minus") }
+                            }
                             Divider()
                         }
                         ForEach(client.models(for: conv.engine ?? .claude)) { m in

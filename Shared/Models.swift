@@ -136,10 +136,13 @@ enum TeamPreset: String, CaseIterable, Identifiable {
 }
 
 extension Array where Element == Message {
-    /// A run of "X joined the group." notes shows as one line ("A, B and 3 others joined the group.").
-    /// Display only: the stored chat keeps every note.
+    /// A run of "X joined the group." (or "left the group.") notes shows as one line
+    /// ("A, B and 3 others joined the group."). Display only: the stored chat keeps every note.
     var squishedJoins: [Message] {
-        let tail = " joined the group."
+        self.squished(" joined the group.").squished(" left the group.")
+    }
+
+    private func squished(_ tail: String) -> [Message] {
         var out: [Message] = []
         var names: [String] = []
         var first: Message?

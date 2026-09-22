@@ -124,6 +124,7 @@ final class RemoteClient: ObservableObject {
         try? await call(RPCRequest(op: .team, contact: project, text: opener, model: model, engine: engine, wait: asGroup, names: members)).convId
     }
 
+    func removeFromGroup(_ conv: UUID, _ contact: UUID) { fire(RPCRequest(op: .leave, conv: conv, contact: contact)) }
     func setChatter(_ conv: UUID, on: Bool) { fire(RPCRequest(op: .chatter, conv: conv, wait: on)) }
 
     func setModel(_ conv: UUID, _ model: String) { fire(RPCRequest(op: .setModel, conv: conv, model: model)) }

@@ -262,6 +262,8 @@ final class RemoteServer: ObservableObject {
                                               opener: req.text ?? "", engine: req.engine ?? .claude, model: req.model)
                 store.selectedId = before
             } else { res.ok = false; res.error = "Pick a project and at least one team member." }
+        case .leave:
+            if let c = req.conv, let who = req.contact { store.removeFromGroup(c, who) } else { res.ok = false }
         case .chatter:
             if let c = req.conv { store.setChatter(c, on: req.wait ?? true) } else { res.ok = false }
         case .setModel:

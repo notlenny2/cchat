@@ -308,9 +308,26 @@ final class Store: ObservableObject {
 
     func setParticipants(_ convId: UUID, _ ids: [UUID], title: String?) {
         guard let i = index(of: convId) else { return }
+        let before = conversations[i].participantIds
+        if conversations[i].isGroup {
+            let name = { (id: UUID) in self.contact(id).map(self.displayName) ?? "Someone" }
+            for id in before where !ids.contains(id) {
+                conversations[i].messages.append(Message(senderId: nil, text: "\(name(id)) left the group.", kind: .system))
+            }
+            for id in ids where !before.contains(id) {
+                conversations[i].messages.append(Message(senderId: nil, text: "\(name(id)) joined the group.", kind: .system))
+            }
+        }
         conversations[i].participantIds = ids
         conversations[i].title = title?.isEmpty == true ? nil : title
         save()
+    }
+
+    /// Take one agent out of a group. Their own 1:1 chat is untouched, and the group keeps their memory
+    /// (`sessions`), so adding them back later picks up where they were. A group never drops below two.
+    func removeFromGroup(_ convId: UUID, _ contactId: UUID) {
+        guard let conv = conversation(convId), conv.participantIds.count > 2, conv.participantIds.contains(contactId) else { return }
+        setParticipants(convId, conv.participantIds.filter { $0 != contactId }, title: conv.title)
     }
 
     func rename(_ convId: UUID, to title: String) {
