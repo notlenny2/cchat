@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 
 struct ChatView: View {
     @EnvironmentObject var client: RemoteClient
@@ -140,11 +141,16 @@ struct Bubble: View {
                         if lastInRun { Avatar(contact: client.contact(message.senderId), size: 28) }
                         else { Color.clear.frame(width: 28, height: 1) }
                     }
-                    Text(rendered)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 13).padding(.vertical, 8)
-                        .foregroundStyle(mine ? .white : .primary)
-                        .background(bubble)
+                    VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+                        ForEach(message.attachments ?? [], id: \.self) { RemoteMedia(name: $0) }
+                        if !message.text.isEmpty {
+                            Text(rendered)
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 13).padding(.vertical, 8)
+                                .foregroundStyle(mine ? .white : .primary)
+                                .background(bubble)
+                        }
+                    }
                     if !mine { Spacer(minLength: 60) }
                 }
                 if message.kind == .error {
@@ -166,5 +172,38 @@ struct Bubble: View {
         if mine { shape.fill(message.from == nil ? Palette.blue : Color(red: 0.55, green: 0.36, blue: 0.96)) }
         else if message.kind == .error { shape.fill(Color.red.opacity(0.15)) }
         else { shape.fill(Color(uiColor: .secondarySystemBackground)) }
+    }
+}
+
+/// A picture or video from the chat, fetched from the Mac the first time it's shown.
+struct RemoteMedia: View {
+    @EnvironmentObject var client: RemoteClient
+    let name: String
+    @State private var url: URL?
+    @State private var failed = false
+    @State private var player: AVPlayer?
+
+    private var isVideo: Bool { ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: name).pathExtension.lowercased()) }
+
+    var body: some View {
+        Group {
+            if let url {
+                if isVideo {
+                    VideoPlayer(player: player).frame(width: 260, height: 170)
+                        .onAppear { if player == nil { player = AVPlayer(url: url) } }
+                } else if let img = UIImage(contentsOfFile: url.path) {
+                    Image(uiImage: img).resizable().scaledToFit().frame(maxWidth: 260, maxHeight: 300)
+                }
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16).fill(Color.secondary.opacity(0.15))
+                    if failed { Label(isVideo ? "Video" : "Picture", systemImage: "exclamationmark.triangle").font(.caption) }
+                    else { ProgressView() }
+                }
+                .frame(width: 200, height: 140)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .task { if url == nil { url = await client.media(name); failed = url == nil } }
     }
 }

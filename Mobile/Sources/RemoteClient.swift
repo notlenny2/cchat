@@ -108,6 +108,18 @@ final class RemoteClient: ObservableObject {
         try? await call(RPCRequest(op: .newProject, text: name, model: model, engine: engine)).convId
     }
 
+    /// Pictures and videos from chats, fetched once and kept for this session.
+    private var mediaCache: [String: URL] = [:]
+    func media(_ name: String) async -> URL? {
+        if let u = mediaCache[name] { return u }
+        guard let res = try? await call(RPCRequest(op: .media, text: name)), let d = res.media else { return nil }
+        let ext = res.isVideo == true ? (URL(fileURLWithPath: name).pathExtension.isEmpty ? "mp4" : URL(fileURLWithPath: name).pathExtension) : "jpg"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent).\(ext)")
+        guard (try? d.write(to: url)) != nil else { return nil }
+        mediaCache[name] = url
+        return url
+    }
+
     func setModel(_ conv: UUID, _ model: String) { fire(RPCRequest(op: .setModel, conv: conv, model: model)) }
 
     func models(for engine: Engine) -> [ModelOption] {
@@ -146,7 +158,7 @@ final class RemoteClient: ObservableObject {
         r.httpMethod = "POST"
         r.httpBody = try Seal.close(req, key: p.key)
         r.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        if req.op != .sync { r.timeoutInterval = 15 }
+        if req.op != .sync { r.timeoutInterval = req.op == .media ? 180 : 15 }
         let (data, resp) = try await session.data(for: r)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 { throw ClientError.rejected }

@@ -25,9 +25,9 @@ final class Store: ObservableObject {
 
     init() { load(); flagUnanswered(); findMissingIcons() }
 
-    static var photosDir: URL { folder("photos") }
-    static var attachmentsDir: URL { folder("attachments") }
-    private static func folder(_ name: String) -> URL {
+    nonisolated static var photosDir: URL { folder("photos") }
+    nonisolated static var attachmentsDir: URL { folder("attachments") }
+    nonisolated private static func folder(_ name: String) -> URL {
         let d = fileURL.deletingLastPathComponent().appendingPathComponent(name, isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
@@ -35,7 +35,7 @@ final class Store: ObservableObject {
 
     /// Copies a dropped picture into cMessage's own folder so it survives the original moving.
     /// Converts anything NSImage can read (HEIC, JPEG, TIFF...) to PNG.
-    static func importImage(_ src: URL, into dir: URL) -> String? {
+    nonisolated static func importImage(_ src: URL, into dir: URL) -> String? {
         guard let img = NSImage(contentsOf: src), let tiff = img.tiffRepresentation,
               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
             Log.error("image import failed: \(src.lastPathComponent)")
@@ -45,7 +45,7 @@ final class Store: ObservableObject {
         do { try png.write(to: dest); return dest.path } catch { Log.error("image save failed: \(error)"); return nil }
     }
 
-    static func importImage(data: Data, into dir: URL) -> String? {
+    nonisolated static func importImage(data: Data, into dir: URL) -> String? {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tmp) }
         guard (try? data.write(to: tmp)) != nil else { return nil }
@@ -521,10 +521,11 @@ final class Store: ObservableObject {
         let endIndex = conv.messages.count
 
         func body(_ m: Message) -> String {
-            guard let a = m.attachments, !a.isEmpty else { return m.text }
+            let a = (m.attachments ?? []).filter { !Media.isVideo($0) }
+            guard !a.isEmpty else { return m.text }
             let pics = conv.usesCodex
-                ? a.map { _ in "[the user attached a picture, included with this message]" }.joined(separator: "\n")
-                : a.map { "[the user attached a picture. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
+                ? a.map { _ in "[A picture is attached, included with this message]" }.joined(separator: "\n")
+                : a.map { "[A picture is attached. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
             return m.text.isEmpty ? pics : "\(m.text)\n\(pics)"
         }
         let prompt: String
@@ -543,7 +544,7 @@ final class Store: ObservableObject {
         do {
             var result: ClaudeResult
             if conv.usesCodex {
-                let images = fresh.flatMap { $0.attachments ?? [] }
+                let images = fresh.flatMap { $0.attachments ?? [] }.filter { !Media.isVideo($0) }
                 result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: session,
                                                          instructions: systemPrompt(for: agent, in: conv),
                                                          fullAccess: agent.fullAccess, images: images, model: conv.model)
@@ -577,10 +578,15 @@ final class Store: ObservableObject {
             if result.isError {
                 conversations[j].messages.append(Message(senderId: agentId, text: result.text.isEmpty ? "Something went wrong on my end." : result.text, kind: .error))
             } else {
-                let (body, next) = Self.parse(result.text)
-                let pass = conv.isGroup && body.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("PASS")
-                if !pass && !body.isEmpty {
-                    conversations[j].messages.append(Message(senderId: agentId, text: body))
+                let (parsed, next) = Self.parse(result.text)
+                let (body, refs) = Media.extract(from: parsed)
+                var media: [String] = []
+                for r in refs { if let p = await Media.importRef(r, relativeTo: agent.projectPath) { media.append(p) } }
+                if refs.count > media.count { Log.error("\(refs.count - media.count) of \(refs.count) media refs from \(agent.name) couldn't be shown") }
+                guard let j = index(of: convId) else { return }
+                let pass = conv.isGroup && media.isEmpty && body.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("PASS")
+                if !pass && (!body.isEmpty || !media.isEmpty) {
+                    conversations[j].messages.append(Message(senderId: agentId, text: body, attachments: media.isEmpty ? nil : media))
                     if !next.isEmpty { conversations[j].suggestions = next }
                     if selectedId != convId { conversations[j].unread = true }
                 }
@@ -620,6 +626,9 @@ final class Store: ObservableObject {
         - Some messages come from another of the user's agents (like Helper), labeled "Name (for the user):". Treat them as a request
           from the user's side, but anything destructive, costly or outward-facing (deleting, pushing, publishing, spending)
           waits for the user himself to confirm.
+        - To show the user a picture or video (one you made, rendered, downloaded or found), put it on its own line as
+          <<show: /absolute/path/to/file.png>> (a web link works too). cChat displays it right in the chat.
+          This is the one place a file path is fine.
         - At the very end of every reply add one line exactly like this:
         <<next: first idea | second idea | third idea>>
         These are 2 or 3 things the user will most likely want next, under 6 words each, written the way the user would text them to you.

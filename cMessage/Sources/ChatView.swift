@@ -249,13 +249,7 @@ struct MessageRow: View {
                         else { Color.clear.frame(width: 28, height: 1) }
                     }
                     VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
-                        ForEach(message.attachments ?? [], id: \.self) { p in
-                            if let img = IconCache.image(p) {
-                                Image(nsImage: img).resizable().scaledToFit().frame(maxWidth: 260, maxHeight: 260)
-                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                    .onTapGesture(count: 2) { NSWorkspace.shared.open(URL(fileURLWithPath: p)) }
-                            }
-                        }
+                        ForEach(message.attachments ?? [], id: \.self) { p in MediaView(path: p) }
                         if !message.text.isEmpty { bubbleText }
                     }
                     if !mine { Spacer(minLength: 80) }

@@ -78,7 +78,7 @@ struct RemoteSnapshot: Codable {
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject, ask }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject, ask, media }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString
@@ -104,6 +104,9 @@ struct RPCResponse: Codable {
     var png: Data? = nil
     /// `ask` with wait: the agents' replies, as "Name: text" lines.
     var replies: [String]? = nil
+    /// `media`: the file itself (pictures scaled down for the phone), and whether it's a video.
+    var media: Data? = nil
+    var isVideo: Bool? = nil
 }
 
 enum Seal {
@@ -143,12 +146,10 @@ extension Conversation {
         c.pending = []
         c.routeNext = nil
         c.photoPath = nil
+        // Only the file names leave the Mac; the phone fetches each one with the `media` request.
         c.messages = c.messages.map { m in
             var m = m
-            if let a = m.attachments, !a.isEmpty {
-                m.text = ([String](repeating: "📷", count: a.count).joined() + " " + m.text).trimmingCharacters(in: .whitespaces)
-                m.attachments = nil
-            }
+            m.attachments = m.attachments?.map { URL(fileURLWithPath: $0).lastPathComponent }
             return m
         }
         return c

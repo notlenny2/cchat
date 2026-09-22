@@ -252,6 +252,18 @@ final class RemoteServer: ObservableObject {
             } else { res.ok = false; res.error = "Couldn't make that project." }
         case .setModel:
             if let c = req.conv { store.setModel(c, req.model) } else { res.ok = false }
+        case .media:
+            // Only files inside cChat's own attachments folder, looked up by bare name.
+            guard let name = req.text, !name.contains("/"), !name.hasPrefix(".") else { res.ok = false; break }
+            let url = Store.attachmentsDir.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.path) else { res.ok = false; res.error = "Gone."; break }
+            if Media.isVideo(url.path) {
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                if size < 200_000_000 { res.media = try? Data(contentsOf: url); res.isVideo = true }
+                else { res.ok = false; res.error = "Too big for the phone; open it on the Mac." }
+            } else {
+                res.media = Self.scaled(url.path, maxSide: 1600)
+            }
         case .icon:
             if let id = req.contact, let c = store.contact(id), let path = store.iconPath(for: c) {
                 res.png = Self.thumbnail(path)
@@ -274,6 +286,18 @@ final class RemoteServer: ObservableObject {
                               typing: store.typing,
                               busy: store.conversations.map(\.id).filter(store.isBusy),
                               models: ["claude": ModelCatalog.claude, "codex": ClaudeRunner.codexModels])
+    }
+
+    private static func scaled(_ path: String, maxSide: CGFloat) -> Data? {
+        guard let img = NSImage(contentsOfFile: path), let rep0 = img.representations.first else { return nil }
+        let w = CGFloat(rep0.pixelsWide), h = CGFloat(rep0.pixelsHigh)
+        let k = min(1, maxSide / max(w, h, 1))
+        let size = NSSize(width: max(1, w * k), height: max(1, h * k))
+        let out = NSImage(size: size)
+        out.lockFocus(); NSGraphicsContext.current?.imageInterpolation = .high
+        img.draw(in: NSRect(origin: .zero, size: size)); out.unlockFocus()
+        guard let tiff = out.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85])
     }
 
     private static func thumbnail(_ path: String) -> Data? {
