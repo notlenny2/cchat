@@ -167,6 +167,7 @@ struct NewChatSheet: View {
     @Environment(\.dismiss) private var dismiss
     let opened: (UUID) -> Void
     @State private var engine: Engine = .claude
+    @State private var model = ""
 
     var body: some View {
         NavigationStack {
@@ -174,6 +175,11 @@ struct NewChatSheet: View {
                 ForEach(Engine.allCases) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented).padding(.horizontal)
+            .onChange(of: engine) { _, _ in model = "" }
+            Picker("Model", selection: $model) {
+                ForEach(client.models(for: engine)) { m in Text(m.label).tag(m.id) }
+            }
+            .padding(.horizontal)
             List {
                 let all = client.snapshot?.contacts ?? []
                 ForEach(all.filter { $0.parentId == nil }.sorted { $0.name < $1.name }) { p in
@@ -181,7 +187,7 @@ struct NewChatSheet: View {
                         ForEach([p] + all.filter { $0.parentId == p.id }) { c in
                             Button {
                                 Task {
-                                    if let id = await client.openChat(with: c.id, engine: engine) { opened(id) }
+                                    if let id = await client.openChat(with: c.id, engine: engine, model: model) { opened(id) }
                                     dismiss()
                                 }
                             } label: {

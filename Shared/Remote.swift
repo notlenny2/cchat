@@ -72,10 +72,12 @@ struct RemoteSnapshot: Codable {
     /// conversation id -> who is typing (a contact id, or `routerId` while the group decides).
     var typing: [UUID: UUID]
     var busy: [UUID]
+    /// Models the phone can offer, per engine.
+    var models: [String: [ModelOption]]? = nil
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString
@@ -84,6 +86,7 @@ struct RPCRequest: Codable {
     var contact: UUID? = nil
     var text: String? = nil
     var since: Int? = nil
+    var model: String? = nil
 }
 
 struct RPCResponse: Codable {

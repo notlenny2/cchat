@@ -259,6 +259,7 @@ struct NewMessageSheet: View {
     @State private var picked: [UUID] = []
     @State private var title = ""
     @State private var engine: Engine = .claude
+    @State private var model = ""
     var existing: Conversation? = nil
 
     var body: some View {
@@ -295,6 +296,12 @@ struct NewMessageSheet: View {
                     .horizontalRadioGroupLayout()
                     .labelsHidden()
                     .disabled(engine == .claude && ClaudeRunner.codexPath == nil)
+                    .onChange(of: engine) { _, _ in model = "" }
+                    Spacer()
+                    Picker("Model", selection: $model) {
+                        ForEach(store.models(for: engine)) { m in Text(m.label).tag(m.id) }
+                    }
+                    .fixedSize()
                 }
             } else if let e = existing, e.usesCodex {
                 Text("This chat runs on Codex.").font(.caption).foregroundStyle(.secondary)
@@ -311,7 +318,7 @@ struct NewMessageSheet: View {
                 Button("Cancel") { dismiss() }
                 Button(existing == nil ? "Start" : "Save") {
                     if let e = existing { store.setParticipants(e.id, picked, title: title) }
-                    else { store.openGroup(picked, title: title, engine: engine) }
+                    else { store.openGroup(picked, title: title, engine: engine, model: model) }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

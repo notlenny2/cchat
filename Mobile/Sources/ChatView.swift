@@ -21,6 +21,15 @@ struct ChatView: View {
                         Text(client.title(conv)).font(.caption.weight(.semibold)).lineLimit(1)
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        ForEach(client.models(for: conv.engine ?? .claude)) { m in
+                            Button { client.setModel(convId, m.id) } label: {
+                                if (conv.model ?? "") == m.id { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
+                            }
+                        }
+                    } label: { Label(client.modelSummary(conv), systemImage: "cpu") }
+                }
                 if client.isBusy(convId) {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Stop", role: .destructive) { client.stopReply(convId) }.tint(.red)

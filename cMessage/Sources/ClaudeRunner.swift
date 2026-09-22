@@ -158,6 +158,22 @@ enum ClaudeRunner {
         return r
     }
 
+    /// Codex's own list of models (the ones it shows in its picker), newest first.
+    static var codexModels: [ModelOption] {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/models_cache.json")
+        var out = [ModelOption(id: "", label: "Default", note: "Whatever Codex normally uses")]
+        if let d = try? Data(contentsOf: url), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let ms = o["models"] as? [[String: Any]] {
+            for m in ms where (m["visibility"] as? String) == "list" {
+                if let slug = m["slug"] as? String {
+                    out.append(ModelOption(id: slug, label: (m["display_name"] as? String) ?? slug,
+                                           note: (m["description"] as? String) ?? ""))
+                }
+            }
+        }
+        return out
+    }
+
     static var codexPath: String? {
         let fixed = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
         let fromPath = loginPath.split(separator: ":").map { "\($0)/codex" }
@@ -168,7 +184,7 @@ enum ClaudeRunner {
     /// rest of the app doesn't care which one answered. Codex has no system-prompt flag, so cChat's
     /// house rules ride at the top of the message, clearly marked as coming from the app.
     static func runCodex(prompt: String, cwd: String, threadId: String?, instructions: String,
-                         fullAccess: Bool, images: [String]) async throws -> ClaudeResult {
+                         fullAccess: Bool, images: [String], model: String? = nil) async throws -> ClaudeResult {
         guard let codex = codexPath else { throw RunnerError.failed("Couldn't find Codex on this Mac.") }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
@@ -178,6 +194,7 @@ enum ClaudeRunner {
         if let threadId { args += ["resume", threadId] }
         args += ["--json", "--skip-git-repo-check"]
         args += fullAccess ? ["--dangerously-bypass-approvals-and-sandbox"] : ["-c", "sandbox_mode=\"workspace-write\""]
+        if let model, !model.isEmpty { args += ["-m", model] }
         for img in images { args += ["-i", img] }
         args.append("-")
         let full = "[cChat app instructions, not from the user]\n\(instructions)\n[end of app instructions]\n\n\(prompt)"

@@ -94,8 +94,19 @@ final class RemoteClient: ObservableObject {
         try? await call(RPCRequest(op: .merge, conv: source, target: target)).convId
     }
 
-    func openChat(with contact: UUID, engine: Engine = .claude) async -> UUID? {
-        try? await call(RPCRequest(op: .open, contact: contact, text: engine.rawValue)).convId
+    func openChat(with contact: UUID, engine: Engine = .claude, model: String = "") async -> UUID? {
+        try? await call(RPCRequest(op: .open, contact: contact, text: engine.rawValue, model: model)).convId
+    }
+
+    func setModel(_ conv: UUID, _ model: String) { fire(RPCRequest(op: .setModel, conv: conv, model: model)) }
+
+    func models(for engine: Engine) -> [ModelOption] {
+        snapshot?.models?[engine.rawValue] ?? (engine == .claude ? ModelCatalog.claude : [ModelOption(id: "", label: "Default", note: "")])
+    }
+
+    func modelSummary(_ c: Conversation) -> String {
+        let e = c.engine ?? .claude
+        return e.label + (ModelCatalog.label(c.model, in: models(for: e)).map { " · \($0)" } ?? "")
     }
 
     private func fire(_ req: RPCRequest) {

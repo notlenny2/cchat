@@ -199,10 +199,12 @@ final class RemoteServer: ObservableObject {
         case .open:
             if let id = req.contact, let c = store.contact(id) {
                 let before = store.selectedId
-                store.openChat(with: c, engine: req.text == "codex" ? .codex : .claude)
+                store.openChat(with: c, engine: req.text == "codex" ? .codex : .claude, model: req.model)
                 res.convId = store.selectedId
                 store.selectedId = before
             } else { res.ok = false }
+        case .setModel:
+            if let c = req.conv { store.setModel(c, req.model) } else { res.ok = false }
         case .icon:
             if let id = req.contact, let c = store.contact(id), let path = store.iconPath(for: c) {
                 res.png = Self.thumbnail(path)
@@ -223,7 +225,8 @@ final class RemoteServer: ObservableObject {
                               contacts: contacts,
                               conversations: store.conversations.filter { !$0.hidden }.map(\.forRemote),
                               typing: store.typing,
-                              busy: store.conversations.map(\.id).filter(store.isBusy))
+                              busy: store.conversations.map(\.id).filter(store.isBusy),
+                              models: ["claude": ModelCatalog.claude, "codex": ClaudeRunner.codexModels])
     }
 
     private static func thumbnail(_ path: String) -> Data? {

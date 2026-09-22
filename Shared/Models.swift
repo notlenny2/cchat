@@ -47,6 +47,26 @@ enum Engine: String, Codable, CaseIterable, Identifiable {
     var label: String { self == .claude ? "Claude" : "Codex" }
 }
 
+struct ModelOption: Codable, Hashable, Identifiable {
+    var id: String      // "" = default
+    var label: String
+    var note: String
+}
+
+enum ModelCatalog {
+    static let claude: [ModelOption] = [
+        ModelOption(id: "", label: "Default", note: "Whatever Claude Code normally uses"),
+        ModelOption(id: "fable", label: "Fable", note: "Most capable"),
+        ModelOption(id: "opus", label: "Opus", note: "Very capable"),
+        ModelOption(id: "sonnet", label: "Sonnet", note: "Fast and smart"),
+        ModelOption(id: "haiku", label: "Haiku", note: "Quickest, cheapest"),
+    ]
+    static func label(_ id: String?, in list: [ModelOption]) -> String? {
+        guard let id, !id.isEmpty else { return nil }
+        return list.first { $0.id == id }?.label ?? id
+    }
+}
+
 struct Conversation: Identifiable, Codable, Hashable {
     var id = UUID()
     var participantIds: [UUID]
@@ -54,6 +74,8 @@ struct Conversation: Identifiable, Codable, Hashable {
     /// nil = Claude (every chat made before Codex existed).
     var engine: Engine? = nil
     var usesCodex: Bool { engine == .codex }
+    /// Model picked for this chat. nil = the contact's setting (Claude) or Codex's own default.
+    var model: String? = nil
     /// Group photo the user dragged onto the chat header (copied into cMessage's photos folder).
     var photoPath: String? = nil
     var messages: [Message] = []

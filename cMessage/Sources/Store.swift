@@ -186,22 +186,39 @@ final class Store: ObservableObject {
     // MARK: Conversations
 
     /// Opens (or brings back) the 1:1 chat with a contact, memory intact.
-    func openChat(with c: Contact, engine: Engine = .claude) {
+    func models(for engine: Engine) -> [ModelOption] { engine == .codex ? ClaudeRunner.codexModels : ModelCatalog.claude }
+
+    /// What's actually answering in this chat, e.g. "Codex · GPT-5.6-Sol" or "Claude · Opus".
+    func modelSummary(_ conv: Conversation) -> String {
+        let e = conv.engine ?? .claude
+        let id = conv.model ?? (e == .claude && !conv.isGroup ? contact(conv.participantIds.first)?.model : nil)
+        return e.label + (ModelCatalog.label(id, in: models(for: e)).map { " · \($0)" } ?? "")
+    }
+
+    func setModel(_ convId: UUID, _ model: String?) {
+        guard let i = index(of: convId) else { return }
+        conversations[i].model = (model?.isEmpty ?? true) ? nil : model
+        conversations[i].messages.append(Message(senderId: nil, text: "Now using \(modelSummary(conversations[i])).", kind: .system))
+        save()
+    }
+
+    func openChat(with c: Contact, engine: Engine = .claude, model: String? = nil) {
         if let i = conversations.firstIndex(where: { $0.participantIds == [c.id] && ($0.engine ?? .claude) == engine }) {
             conversations[i].hidden = false
             selectedId = conversations[i].id
         } else {
-            let conv = Conversation(participantIds: [c.id], engine: engine == .claude ? nil : engine)
+            let conv = Conversation(participantIds: [c.id], engine: engine == .claude ? nil : engine,
+                                    model: (model?.isEmpty ?? true) ? nil : model)
             conversations.append(conv)
             selectedId = conv.id
         }
         save()
     }
 
-    func openGroup(_ ids: [UUID], title: String?, engine: Engine = .claude) {
-        if ids.count == 1, let c = contact(ids[0]) { openChat(with: c, engine: engine); return }
+    func openGroup(_ ids: [UUID], title: String?, engine: Engine = .claude, model: String? = nil) {
+        if ids.count == 1, let c = contact(ids[0]) { openChat(with: c, engine: engine, model: model); return }
         let conv = Conversation(participantIds: ids, title: title?.isEmpty == true ? nil : title,
-                                engine: engine == .claude ? nil : engine)
+                                engine: engine == .claude ? nil : engine, model: (model?.isEmpty ?? true) ? nil : model)
         conversations.append(conv)
         selectedId = conv.id
         save()
@@ -445,25 +462,25 @@ final class Store: ObservableObject {
                 let images = fresh.flatMap { $0.attachments ?? [] }
                 result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: session,
                                                          instructions: systemPrompt(for: agent, in: conv),
-                                                         fullAccess: agent.fullAccess, images: images)
+                                                         fullAccess: agent.fullAccess, images: images, model: conv.model)
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("thread") {
                     Log.info("codex resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: nil,
                                                              instructions: systemPrompt(for: agent, in: conv),
-                                                             fullAccess: agent.fullAccess, images: images)
+                                                             fullAccess: agent.fullAccess, images: images, model: conv.model)
                 }
             } else {
                 result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                    systemPrompt: systemPrompt(for: agent, in: conv),
-                                                   model: agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path])
+                                                   model: conv.model ?? agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path])
                 // A resume can fail if the old session was cleaned up. Start fresh once rather than dying.
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("conversation") {
                     Log.info("resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
                                                        systemPrompt: systemPrompt(for: agent, in: conv),
-                                                       model: agent.model, fullAccess: agent.fullAccess, extraDirs: [Store.attachmentsDir.path])
+                                                       model: conv.model ?? agent.model, fullAccess: agent.fullAccess, extraDirs: [Store.attachmentsDir.path])
                 }
             }
             guard let j = index(of: convId) else { return }

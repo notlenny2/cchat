@@ -80,10 +80,28 @@ struct ChatView: View {
             .buttonStyle(.borderless).foregroundStyle(.secondary).help("Rename chat").padding(.leading, 16)
         }
         .overlay(alignment: .trailing) {
-            if store.isBusy(convId) {
-                Button("Stop") { store.stop(convId) }
-                    .buttonStyle(.borderless).foregroundStyle(.red).padding(.trailing, 16)
+            HStack(spacing: 12) {
+                if store.isBusy(convId) {
+                    Button("Stop") { store.stop(convId) }
+                        .buttonStyle(.borderless).foregroundStyle(.red)
+                }
+                Menu {
+                    let e = conv.engine ?? .claude
+                    ForEach(store.models(for: e)) { m in
+                        Button {
+                            store.setModel(convId, m.id)
+                        } label: {
+                            if (conv.model ?? "") == m.id { Label("\(m.label) · \(m.note)", systemImage: "checkmark") }
+                            else { Text("\(m.label) · \(m.note)") }
+                        }
+                    }
+                } label: {
+                    Label(store.modelSummary(conv), systemImage: "cpu").font(.caption)
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("Pick which model answers in this chat")
             }
+            .padding(.trailing, 16)
         }
         .padding(.vertical, 10)
     }
