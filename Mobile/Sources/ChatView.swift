@@ -82,7 +82,7 @@ struct ChatView: View {
                 }
             }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField("cMessage", text: $draft, axis: .vertical)
+                TextField("cChat", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .focused($focused)
                     .padding(.horizontal, 14).padding(.vertical, 8)

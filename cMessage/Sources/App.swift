@@ -24,7 +24,7 @@ struct CMessageApp: App {
     @StateObject private var store = Store()
 
     var body: some Scene {
-        WindowGroup("cMessage") {
+        WindowGroup("cChat") {
             ContentView()
                 .environmentObject(store)
                 .frame(minWidth: 760, minHeight: 480)

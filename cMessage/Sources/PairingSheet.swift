@@ -15,7 +15,7 @@ struct PairingSheet: View {
                     Image(nsImage: img).interpolation(.none).resizable().frame(width: 240, height: 240)
                         .padding(12).background(.white, in: RoundedRectangle(cornerRadius: 12))
                 }
-                Text("Open cMessage on your iPhone or iPad and scan this. Both need to be on the same Wi-Fi as this Mac.")
+                Text("Open cChat on your iPhone or iPad and scan this. Both need to be on the same Wi-Fi as this Mac.")
                     .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(width: 360)
                 HStack(spacing: 6) {
                     Circle().fill(server.running ? .green : .orange).frame(width: 8, height: 8)

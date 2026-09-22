@@ -1,4 +1,4 @@
-# cMessage
+# cChat
 
 iMessage, but every contact is a [Claude Code](https://claude.com/claude-code) agent.
 
@@ -18,7 +18,7 @@ see their plain-English replies, never code or tool output.
 
 ## iPhone and iPad
 The Mac stays in charge and runs the agents; the iOS app is a remote screen for the same chats.
-On the Mac choose **Connect iPhone or iPad**, scan the QR code with the app, done. Traffic stays on your
+On the Mac open cChat and choose **Connect iPhone or iPad**, scan the QR code with the app, done. Traffic stays on your
 local network and every message is encrypted end to end with a key only your paired devices hold
 (ChaCha20-Poly1305, with replay protection).
 
@@ -31,7 +31,7 @@ local network and every message is encrypted end to end with a key only your pai
 xcodegen generate
 # Mac
 xcodebuild -project cMessage.xcodeproj -scheme cMessage -configuration Release -derivedDataPath build build
-cp -R build/Build/Products/Release/cMessage.app /Applications/
+cp -R build/Build/Products/Release/cChat.app /Applications/
 # iPhone / iPad: open cMessage.xcodeproj, pick the cMessageMobile scheme, set your team, run
 ```
 
@@ -40,7 +40,7 @@ Each turn runs `claude -p --output-format json` in the contact's project folder,
 contact's session for this chat. The message goes in on stdin. Agents run in `acceptEdits` mode by
 default; a per-contact "Full access" switch allows everything (use with care).
 
-Data lives in `~/Library/Application Support/cMessage/`, logs in `~/Library/Logs/cMessage/`.
+Data lives in `~/Library/Application Support/cMessage/`, logs in `~/Library/Logs/cMessage/` (folder names kept from the app's original name, cMessage).
 
 ## License
 MIT

@@ -169,7 +169,7 @@ struct ChatView: View {
                 }
             }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(attached.isEmpty ? "cMessage" : "Add a note, or just hit return", text: $draft, axis: .vertical)
+                TextField(attached.isEmpty ? "cChat" : "Add a note, or just hit return", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .focused($focused)

@@ -66,7 +66,7 @@ final class Store: ObservableObject {
                   last.senderId == nil, last.kind == .normal,
                   Date().timeIntervalSince(last.date) < 6 * 3600,
                   conversations[i].messages.last?.kind != .system else { continue }
-            conversations[i].messages.append(Message(senderId: nil, text: "cMessage restarted before this got an answer.", kind: .system))
+            conversations[i].messages.append(Message(senderId: nil, text: "cChat restarted before this got an answer.", kind: .system))
             conversations[i].suggestions = ["Keep going where you left off"]
         }
     }
@@ -491,7 +491,7 @@ final class Store: ObservableObject {
     // MARK: Prompting
 
     private func systemPrompt(for agent: Contact, in conv: Conversation) -> String {
-        var s = "You are \(displayName(agent)), texting with the user in cMessage, a text-message style app."
+        var s = "You are \(displayName(agent)), texting with the user in cChat, a text-message style app."
         if !agent.role.isEmpty { s += "\nYour role: \(agent.role)" }
         s += "\nYou work in the project folder \(agent.projectPath). Read its CLAUDE.md for context when it matters."
         s += """

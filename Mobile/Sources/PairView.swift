@@ -13,8 +13,8 @@ struct PairView: View {
             Spacer()
             Image(systemName: "message.fill").font(.system(size: 64))
                 .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.59, blue: 0.35), Color(red: 0.91, green: 0.28, blue: 0.24)], startPoint: .top, endPoint: .bottom))
-            Text("cMessage").font(.largeTitle.bold())
-            Text("Link to your Mac. On the Mac, open cMessage and choose Connect iPhone or iPad, then scan the code.")
+            Text("cChat").font(.largeTitle.bold())
+            Text("Link to your Mac. On the Mac, open cChat and choose Connect iPhone or iPad, then scan the code.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal, 32)
             if DataScannerViewController.isSupported {
                 Button { scanning = true } label: {

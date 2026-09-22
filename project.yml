@@ -19,7 +19,7 @@ targets:
     info:
       path: cMessage/Info.plist
       properties:
-        CFBundleDisplayName: cMessage
+        CFBundleDisplayName: cChat
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSApplicationCategoryType: public.app-category.productivity
@@ -27,6 +27,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage
+        PRODUCT_NAME: cChat
         # The app launches the local `claude` CLI, so it cannot run inside the App Sandbox.
         ENABLE_APP_SANDBOX: NO
         CODE_SIGN_STYLE: Automatic
@@ -44,7 +45,7 @@ targets:
     info:
       path: Mobile/Info.plist
       properties:
-        CFBundleDisplayName: cMessage
+        CFBundleDisplayName: cChat
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
@@ -62,6 +63,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage.mobile
+        PRODUCT_NAME: cChat
         TARGETED_DEVICE_FAMILY: "1,2"
         DEVELOPMENT_TEAM: XXXXXXXXXX
         CODE_SIGN_STYLE: Automatic
