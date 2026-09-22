@@ -258,6 +258,7 @@ struct NewMessageSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var picked: [UUID] = []
     @State private var title = ""
+    @State private var engine: Engine = .claude
     var existing: Conversation? = nil
 
     var body: some View {
@@ -284,6 +285,20 @@ struct NewMessageSheet: View {
             if picked.count > 1 {
                 TextField("Group name (optional)", text: $title)
             }
+            if existing == nil {
+                HStack {
+                    Text("Talk to:").foregroundStyle(.secondary)
+                    Picker("", selection: $engine) {
+                        ForEach(Engine.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .horizontalRadioGroupLayout()
+                    .labelsHidden()
+                    .disabled(engine == .claude && ClaudeRunner.codexPath == nil)
+                }
+            } else if let e = existing, e.usesCodex {
+                Text("This chat runs on Codex.").font(.caption).foregroundStyle(.secondary)
+            }
             List {
                 ForEach(store.projects) { p in
                     toggleRow(p)
@@ -296,7 +311,7 @@ struct NewMessageSheet: View {
                 Button("Cancel") { dismiss() }
                 Button(existing == nil ? "Start" : "Save") {
                     if let e = existing { store.setParticipants(e.id, picked, title: title) }
-                    else { store.openGroup(picked, title: title) }
+                    else { store.openGroup(picked, title: title, engine: engine) }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

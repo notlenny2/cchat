@@ -127,6 +127,7 @@ struct ConversationRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(store.title(for: conv)).font(.headline).lineLimit(1)
+                    EngineBadge(conv: conv)
                     Spacer()
                     Text(conv.messages.last.map { shortDate($0.date) } ?? "")
                         .font(.caption).foregroundStyle(.secondary)

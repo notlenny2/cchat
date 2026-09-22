@@ -40,10 +40,20 @@ struct Message: Identifiable, Codable, Hashable {
     var attachments: [String]? = nil
 }
 
+/// Which AI runs the agents in a chat. Picked when the chat starts.
+enum Engine: String, Codable, CaseIterable, Identifiable {
+    case claude, codex
+    var id: String { rawValue }
+    var label: String { self == .claude ? "Claude" : "Codex" }
+}
+
 struct Conversation: Identifiable, Codable, Hashable {
     var id = UUID()
     var participantIds: [UUID]
     var title: String? = nil
+    /// nil = Claude (every chat made before Codex existed).
+    var engine: Engine? = nil
+    var usesCodex: Bool { engine == .codex }
     /// Group photo the user dragged onto the chat header (copied into cMessage's photos folder).
     var photoPath: String? = nil
     var messages: [Message] = []

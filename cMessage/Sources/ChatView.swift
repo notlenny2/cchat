@@ -59,6 +59,7 @@ struct ChatView: View {
                         .help("Drop a picture here to make it the photo")
                     HStack(spacing: 2) {
                         Text(store.title(for: conv)).font(.caption.weight(.medium)).foregroundStyle(.primary)
+                        EngineBadge(conv: conv)
                         Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
                     }
                     if let sub = subtitle(conv) {

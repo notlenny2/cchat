@@ -94,8 +94,8 @@ final class RemoteClient: ObservableObject {
         try? await call(RPCRequest(op: .merge, conv: source, target: target)).convId
     }
 
-    func openChat(with contact: UUID) async -> UUID? {
-        try? await call(RPCRequest(op: .open, contact: contact)).convId
+    func openChat(with contact: UUID, engine: Engine = .claude) async -> UUID? {
+        try? await call(RPCRequest(op: .open, contact: contact, text: engine.rawValue)).convId
     }
 
     private func fire(_ req: RPCRequest) {

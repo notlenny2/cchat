@@ -199,7 +199,7 @@ final class RemoteServer: ObservableObject {
         case .open:
             if let id = req.contact, let c = store.contact(id) {
                 let before = store.selectedId
-                store.openChat(with: c)
+                store.openChat(with: c, engine: req.text == "codex" ? .codex : .claude)
                 res.convId = store.selectedId
                 store.selectedId = before
             } else { res.ok = false }

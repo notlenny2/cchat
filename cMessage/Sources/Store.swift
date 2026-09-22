@@ -186,21 +186,22 @@ final class Store: ObservableObject {
     // MARK: Conversations
 
     /// Opens (or brings back) the 1:1 chat with a contact, memory intact.
-    func openChat(with c: Contact) {
-        if let i = conversations.firstIndex(where: { $0.participantIds == [c.id] }) {
+    func openChat(with c: Contact, engine: Engine = .claude) {
+        if let i = conversations.firstIndex(where: { $0.participantIds == [c.id] && ($0.engine ?? .claude) == engine }) {
             conversations[i].hidden = false
             selectedId = conversations[i].id
         } else {
-            let conv = Conversation(participantIds: [c.id])
+            let conv = Conversation(participantIds: [c.id], engine: engine == .claude ? nil : engine)
             conversations.append(conv)
             selectedId = conv.id
         }
         save()
     }
 
-    func openGroup(_ ids: [UUID], title: String?) {
-        if ids.count == 1, let c = contact(ids[0]) { openChat(with: c); return }
-        let conv = Conversation(participantIds: ids, title: title?.isEmpty == true ? nil : title)
+    func openGroup(_ ids: [UUID], title: String?, engine: Engine = .claude) {
+        if ids.count == 1, let c = contact(ids[0]) { openChat(with: c, engine: engine); return }
+        let conv = Conversation(participantIds: ids, title: title?.isEmpty == true ? nil : title,
+                                engine: engine == .claude ? nil : engine)
         conversations.append(conv)
         selectedId = conv.id
         save()
@@ -250,14 +251,14 @@ final class Store: ObservableObject {
         if target.isGroup {
             group = target
         } else {
-            group = Conversation(participantIds: [])
+            group = Conversation(participantIds: [], engine: target.engine)
             group.messages.append(Message(senderId: nil, text: "New group. Everyone keeps what they knew from their own chat.", kind: .system))
         }
         for from in [target, source] {
             for id in from.participantIds where !group.participantIds.contains(id) {
                 group.participantIds.append(id)
                 let key = id.uuidString
-                if let sid = from.sessions[key] {
+                if let sid = from.sessions[key], (from.engine ?? .claude) == (group.engine ?? .claude) {
                     group.sessions[key] = sid
                     group.forkNext = (group.forkNext ?? []) + [key]
                 }
@@ -420,7 +421,9 @@ final class Store: ObservableObject {
 
         func body(_ m: Message) -> String {
             guard let a = m.attachments, !a.isEmpty else { return m.text }
-            let pics = a.map { "[the user attached a picture. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
+            let pics = conv.usesCodex
+                ? a.map { _ in "[the user attached a picture, included with this message]" }.joined(separator: "\n")
+                : a.map { "[the user attached a picture. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
             return m.text.isEmpty ? pics : "\(m.text)\n\(pics)"
         }
         let prompt: String
@@ -435,10 +438,22 @@ final class Store: ObservableObject {
 
         typing[convId] = agentId
         var session = conv.sessions[key]
-        let fork = session != nil && (conv.forkNext ?? []).contains(key)
+        let fork = session != nil && (conv.forkNext ?? []).contains(key) && !conv.usesCodex
         do {
             var result: ClaudeResult
-            do {
+            if conv.usesCodex {
+                let images = fresh.flatMap { $0.attachments ?? [] }
+                result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: session,
+                                                         instructions: systemPrompt(for: agent, in: conv),
+                                                         fullAccess: agent.fullAccess, images: images)
+                if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("thread") {
+                    Log.info("codex resume failed for \(agent.name), starting fresh")
+                    session = nil
+                    result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: nil,
+                                                             instructions: systemPrompt(for: agent, in: conv),
+                                                             fullAccess: agent.fullAccess, images: images)
+                }
+            } else {
                 result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                    systemPrompt: systemPrompt(for: agent, in: conv),
                                                    model: agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path])

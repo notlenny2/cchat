@@ -158,6 +158,86 @@ enum ClaudeRunner {
         return r
     }
 
+    static var codexPath: String? {
+        let fixed = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
+        let fromPath = loginPath.split(separator: ":").map { "\($0)/codex" }
+        return (fixed + fromPath).first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// One turn of an OpenAI Codex agent (`codex exec --json`), shaped like a Claude result so the
+    /// rest of the app doesn't care which one answered. Codex has no system-prompt flag, so cChat's
+    /// house rules ride at the top of the message, clearly marked as coming from the app.
+    static func runCodex(prompt: String, cwd: String, threadId: String?, instructions: String,
+                         fullAccess: Bool, images: [String]) async throws -> ClaudeResult {
+        guard let codex = codexPath else { throw RunnerError.failed("Couldn't find Codex on this Mac.") }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
+            throw RunnerError.folderMissing(cwd)
+        }
+        var args = ["exec"]
+        if let threadId { args += ["resume", threadId] }
+        args += ["--json", "--skip-git-repo-check"]
+        args += fullAccess ? ["--dangerously-bypass-approvals-and-sandbox"] : ["-c", "sandbox_mode=\"workspace-write\""]
+        for img in images { args += ["-i", img] }
+        args.append("-")
+        let full = "[cChat app instructions, not from the user]\n\(instructions)\n[end of app instructions]\n\n\(prompt)"
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: codex)
+        process.arguments = args
+        process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = loginPath
+        process.environment = env
+        let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = stdout
+        process.standardError = stderr
+        let outBuf = DataBox(), errBuf = DataBox()
+        stdout.fileHandleForReading.readabilityHandler = { outBuf.append($0.availableData) }
+        stderr.fileHandleForReading.readabilityHandler = { errBuf.append($0.availableData) }
+        Log.info("codex \(URL(fileURLWithPath: cwd).lastPathComponent) resume=\(threadId ?? "new") full=\(fullAccess) images=\(images.count)")
+
+        let status: Int32 = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Int32, Error>) in
+                process.terminationHandler = { cont.resume(returning: $0.terminationStatus) }
+                do {
+                    try process.run()
+                    stdin.fileHandleForWriting.write(full.data(using: .utf8) ?? Data())
+                    try? stdin.fileHandleForWriting.close()
+                } catch { process.terminationHandler = nil; cont.resume(throwing: error) }
+            }
+        } onCancel: {
+            if process.isRunning { process.terminate() }
+        }
+        stdout.fileHandleForReading.readabilityHandler = nil
+        stderr.fileHandleForReading.readabilityHandler = nil
+        outBuf.append(stdout.fileHandleForReading.readDataToEndOfFile())
+        errBuf.append(stderr.fileHandleForReading.readDataToEndOfFile())
+        if Task.isCancelled { throw CancellationError() }
+
+        var thread = threadId, messages: [String] = [], errors: [String] = []
+        for line in outBuf.data.split(separator: UInt8(ascii: "\n")) {
+            guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            switch o["type"] as? String {
+            case "thread.started": thread = (o["thread_id"] as? String) ?? thread
+            case "item.completed":
+                if let item = o["item"] as? [String: Any], item["type"] as? String == "agent_message",
+                   let t = item["text"] as? String, !t.isEmpty { messages.append(t) }
+            case "error", "turn.failed":
+                let msg = (o["message"] as? String) ?? ((o["error"] as? [String: Any])?["message"] as? String) ?? "Codex hit an error."
+                errors.append(msg)
+            default: break
+            }
+        }
+        if messages.isEmpty {
+            let err = errors.last ?? firstLine(String(decoding: errBuf.data, as: UTF8.self)) ?? "Codex exited with code \(status)."
+            Log.error("codex failed (exit \(status)): \(err.prefix(800))")
+            return ClaudeResult(text: err, sessionId: thread, deniedTools: [], isError: true)
+        }
+        return ClaudeResult(text: messages.joined(separator: "\n\n"), sessionId: thread, deniedTools: [], isError: false)
+    }
+
     private static func firstLine(_ s: String) -> String? {
         s.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
     }

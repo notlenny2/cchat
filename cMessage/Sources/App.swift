@@ -114,6 +114,19 @@ struct Avatar: View {
     }
 }
 
+/// Small tag next to a chat's name when Codex (not Claude) is answering.
+struct EngineBadge: View {
+    let conv: Conversation
+    var body: some View {
+        if conv.usesCodex {
+            Text("Codex").font(.system(size: 9, weight: .bold, design: .rounded))
+                .padding(.horizontal, 5).padding(.vertical, 1.5)
+                .foregroundStyle(.white)
+                .background(Capsule().fill(Color(red: 0.13, green: 0.13, blue: 0.15)))
+        }
+    }
+}
+
 struct GroupAvatar: View {
     @EnvironmentObject var store: Store
     let ids: [UUID]
