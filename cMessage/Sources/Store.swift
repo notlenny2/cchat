@@ -667,7 +667,8 @@ final class Store: ObservableObject {
                 conversations[j].messages.append(Message(senderId: agentId, text: result.text.isEmpty ? "Something went wrong on my end." : result.text, kind: .error))
             } else {
                 let (parsed, next) = Self.parse(result.text)
-                let (body, refs) = Media.extract(from: parsed)
+                let (withoutOpens, opens) = Self.extractOpens(parsed)
+                let (body, refs) = Media.extract(from: withoutOpens)
                 var media: [String] = []
                 for r in refs { if let p = await Media.importRef(r, relativeTo: agent.projectPath) { media.append(p) } }
                 if refs.count > media.count { Log.error("\(refs.count - media.count) of \(refs.count) media refs from \(agent.name) couldn't be shown") }
@@ -677,6 +678,12 @@ final class Store: ObservableObject {
                     conversations[j].messages.append(Message(senderId: agentId, text: body, attachments: media.isEmpty ? nil : media))
                     if !next.isEmpty { conversations[j].suggestions = next }
                     if selectedId != convId { conversations[j].unread = true }
+                }
+                for open in opens {
+                    if let made = openSubChat(asked: agent, name: open.name, role: open.role, message: open.message, like: conv),
+                       let j2 = index(of: convId) {
+                        conversations[j2].messages.append(Message(senderId: nil, text: "\(displayName(agent)) started a chat with \(displayName(made)).", kind: .system))
+                    }
                 }
                 if !result.deniedTools.isEmpty {
                     let tools = Array(Set(result.deniedTools)).sorted().joined(separator: ", ")
@@ -714,6 +721,11 @@ final class Store: ObservableObject {
         - Some messages come from another of the user's agents (like Helper), labeled "Name (for the user):". Treat them as a request
           from the user's side, but anything destructive, costly or outward-facing (deleting, pushing, publishing, spending)
           waits for the user himself to confirm.
+        - If this really needs a specialist on this same project (a designer's eye, a bug hunter, someone to run a
+          long job while you keep talking to the user), you can start a chat with one, on its own line:
+          <<open: UX | the designer for this project, cares how it feels to use | take a look at the play button>>
+          Name, then what they are for, then what to ask them. the user sees that new chat appear and can join in. Use it
+          when the work genuinely splits; don't open one for something you can answer yourself.
         - To show the user a picture or video (one you made, rendered, downloaded or found), put it on its own line as
           <<show: /absolute/path/to/file.png>> (a web link works too). cChat displays it right in the chat.
           This is the one place a file path is fine.
@@ -735,6 +747,47 @@ final class Store: ObservableObject {
             """
         }
         return s
+    }
+
+    /// `<<open: Name | what they do | first message>>` — an agent starting a chat with a specialist
+    /// on its own project. Name and role are required; the message is optional.
+    static func extractOpens(_ text: String) -> (String, [(name: String, role: String, message: String)]) {
+        var body = text
+        var opens: [(String, String, String)] = []
+        let re = try! NSRegularExpression(pattern: #"<<\s*open\s*:\s*(.+?)\s*>>"#, options: [.caseInsensitive])
+        let ns = body as NSString
+        for m in re.matches(in: body, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let parts = ns.substring(with: m.range(at: 1)).components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if let name = parts.first, !name.isEmpty, name.count <= 40 {
+                opens.insert((name, parts.count > 1 ? parts[1] : "", parts.count > 2 ? parts[2...].joined(separator: " | ") : ""), at: 0)
+            }
+            body = (body as NSString).replacingCharacters(in: m.range, with: "")
+        }
+        return (body.trimmingCharacters(in: .whitespacesAndNewlines), Array(opens.prefix(2)))
+    }
+
+    /// Starts (or reopens) a chat with a specialist under the SAME project as the agent that asked,
+    /// and passes on its opening question. The specialist is a normal sub-contact: the user sees the new
+    /// chat in his list and can take it over, rename it or delete it like any other.
+    @discardableResult
+    func openSubChat(asked by: Contact, name: String, role: String, message: String, like conv: Conversation) -> Contact? {
+        let projectId = by.parentId ?? by.id
+        guard let project = contact(projectId) else { return nil }
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        let existing = subContacts(of: project.id).first { $0.name.caseInsensitiveCompare(clean) == .orderedSame }
+        let specialist = existing ?? addSubContact(to: project, name: clean, role: role)
+        if existing == nil { Log.info("\(by.name) started a chat with \(clean)") }
+
+        let engine = conv.engine ?? .claude
+        let before = selectedId
+        openChat(with: specialist, engine: engine, model: conv.model)
+        guard let newId = selectedId else { return nil }
+        selectedId = before
+        if !message.isEmpty {
+            send(message, in: newId, from: displayName(by))
+        }
+        return specialist
     }
 
     /// Pulls the `<<next: a | b | c>>` line off the end and hides any code blocks that slip through.
