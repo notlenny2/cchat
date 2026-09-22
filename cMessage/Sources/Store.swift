@@ -9,6 +9,8 @@ final class Store: ObservableObject {
     @Published var selectedId: UUID?
     /// conversationId -> contact currently "typing".
     @Published var typing: [UUID: UUID] = [:] { didSet { version += 1 } }
+    /// conversationId -> who currently has that chat's project folder, while this chat waits its turn.
+    @Published var waitingFor: [UUID: String] = [:] { didSet { version += 1 } }
     /// Goes up on every change, so the iPhone/iPad app can ask "anything new since N?".
     private(set) var version = 0
 
@@ -627,6 +629,21 @@ final class Store: ObservableObject {
         }
 
         typing[convId] = agentId
+
+        // Air traffic control: one turn at a time per project folder (see Traffic).
+        var ticket: Traffic.Ticket?
+        if let busy = Traffic.shared.busyLabel(agent.projectPath), busy != displayName(agent) {
+            waitingFor[convId] = busy
+            Log.info("\(agent.name) waiting for \(busy) in \(URL(fileURLWithPath: agent.projectPath).lastPathComponent)")
+        }
+        ticket = await Traffic.shared.take(agent.projectPath, label: displayName(agent))
+        waitingFor[convId] = nil
+        guard ticket != nil, !Task.isCancelled else {
+            if typing[convId] == agentId { typing[convId] = nil }
+            return
+        }
+        defer { Traffic.shared.give(ticket) }
+
         var session = conv.sessions[key]
         let fork = session != nil && (conv.forkNext ?? []).contains(key) && !conv.usesCodex
         do {
@@ -718,6 +735,9 @@ final class Store: ObservableObject {
         - Never paste code, diffs, file contents, commands or file paths in your reply. Do the work with your tools as normal, then say in a sentence or two what you did or found.
         - One question at a time. No em dashes. No headings or bullet lists unless the user asks.
         - Never say you did something unless a tool actually did it.
+        - Other agents share this project folder, so cChat gives it to one of you at a time. It is yours for this
+          reply; finish what you start, don't leave anything running in the background, and don't sit waiting on
+          another agent. If you build, build into this project's own build folder.
         - Some messages come from another of the user's agents (like Helper), labeled "Name (for the user):". Treat them as a request
           from the user's side, but anything destructive, costly or outward-facing (deleting, pushing, publishing, spending)
           waits for the user himself to confirm.

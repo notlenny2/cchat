@@ -218,6 +218,7 @@ final class RemoteClient: ObservableObject {
     }
 
     func typing(in conv: UUID) -> UUID? { snapshot?.typing[conv] }
+    func waitingFor(_ conv: UUID) -> String? { snapshot?.waitingFor?[conv] }
     func isBusy(_ conv: UUID) -> Bool { snapshot?.busy.contains(conv) ?? false }
 }
 

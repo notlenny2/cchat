@@ -291,6 +291,7 @@ final class RemoteServer: ObservableObject {
                               conversations: store.conversations.filter { !$0.hidden }.map(\.forRemote),
                               typing: store.typing,
                               busy: store.conversations.map(\.id).filter(store.isBusy),
+                              waitingFor: store.waitingFor,
                               models: ["claude": ModelCatalog.claude, "codex": ClaudeRunner.codexModels])
     }
 

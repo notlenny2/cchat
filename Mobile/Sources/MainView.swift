@@ -124,7 +124,9 @@ struct Row: View {
                     Spacer()
                     Text(conv.messages.last.map { shortDate($0.date) } ?? "").font(.caption).foregroundStyle(.secondary)
                 }
-                if client.typing(in: conv.id) != nil {
+                if let w = client.waitingFor(conv.id) {
+                    Text("waiting for \(w)").font(.subheadline).foregroundStyle(Clay.inkSoft).lineLimit(1)
+                } else if client.typing(in: conv.id) != nil {
                     TypingDots(dot: 6).padding(.horizontal, 9).padding(.vertical, 6)
                         .clayCapsule(Clay.cream, depth: 0.6)
                 } else {

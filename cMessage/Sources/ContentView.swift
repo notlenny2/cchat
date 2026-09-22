@@ -140,7 +140,9 @@ struct ConversationRow: View {
                     Text(conv.messages.last.map { shortDate($0.date) } ?? "")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if store.typing[conv.id] != nil {
+                if let w = store.waitingFor[conv.id] {
+                    Text("waiting for \(w)").font(.subheadline).foregroundStyle(Clay.inkSoft).lineLimit(1)
+                } else if store.typing[conv.id] != nil {
                     HStack(spacing: 6) {
                         TypingDots(dot: 6)
                             .padding(.horizontal, 9).padding(.vertical, 6)

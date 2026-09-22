@@ -71,6 +71,9 @@ struct ChatView: View {
                             if conv.isGroup { Avatar(contact: client.contact(t), size: 28) }
                             TypingDots().padding(.horizontal, 15).padding(.vertical, 12)
                                 .clay(Clay.cream, radius: 20)
+                            if let w = client.waitingFor(convId) {
+                                Text("waiting for \(w)").font(.caption2).foregroundStyle(.secondary)
+                            }
                             Spacer()
                         }
                         .padding(.top, 6)

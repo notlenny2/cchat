@@ -134,7 +134,8 @@ struct ChatView: View {
                                    lastInRun: next?.senderId != m.senderId || next?.kind == .system)
                     }
                     if let t = store.typing[convId] {
-                        TypingRow(contact: store.contact(t), isGroup: conv.isGroup).id("typing")
+                        TypingRow(contact: store.contact(t), isGroup: conv.isGroup,
+                                  waitingFor: store.waitingFor[convId]).id("typing")
                     }
                     Color.clear.frame(height: 6).id("bottom")
                 }
@@ -298,6 +299,7 @@ struct MessageRow: View {
 struct TypingRow: View {
     let contact: Contact?
     let isGroup: Bool
+    var waitingFor: String? = nil
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -305,7 +307,11 @@ struct TypingRow: View {
             TypingDots(dot: 8)
                 .padding(.horizontal, 15).padding(.vertical, 12)
                 .clay(Clay.cream, radius: 20)
-            if isGroup, let c = contact { Text("\(c.name) is typing").font(.caption2).foregroundStyle(.secondary) }
+            if let w = waitingFor {
+                Text("waiting for \(w) to finish in this project").font(.caption2).foregroundStyle(.secondary)
+            } else if isGroup, let c = contact {
+                Text("\(c.name) is typing").font(.caption2).foregroundStyle(.secondary)
+            }
             Spacer()
         }
         .padding(.top, 6)

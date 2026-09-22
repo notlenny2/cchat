@@ -73,6 +73,8 @@ struct RemoteSnapshot: Codable {
     /// conversation id -> who is typing (a contact id, or `routerId` while the group decides).
     var typing: [UUID: UUID]
     var busy: [UUID]
+    /// conversation id -> who has that project folder while this chat waits its turn.
+    var waitingFor: [UUID: String]? = nil
     /// Models the phone can offer, per engine.
     var models: [String: [ModelOption]]? = nil
 }
