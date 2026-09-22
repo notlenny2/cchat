@@ -167,9 +167,10 @@ struct ContactEditor: View {
     var body: some View {
         VStack(spacing: 14) {
             Avatar(contact: contact, size: 64)
-                .dropDestination(for: URL.self) { urls, _ in
-                    guard let u = urls.first, let p = Store.importImage(u, into: Store.photosDir) else { return false }
-                    contact.iconPath = p; contact.iconSearched = true
+                .onDrop(of: ImageDrop.types, isTargeted: nil) { providers in
+                    ImageDrop.load(Array(providers.prefix(1)), into: Store.photosDir) { paths in
+                        if let p = paths.first { contact.iconPath = p; contact.iconSearched = true }
+                    }
                     return true
                 }
                 .help("Drop a picture here")

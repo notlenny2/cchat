@@ -45,6 +45,26 @@ final class Store: ObservableObject {
         do { try png.write(to: dest); return dest.path } catch { Log.error("image save failed: \(error)"); return nil }
     }
 
+    static func importImage(data: Data, into dir: URL) -> String? {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        guard (try? data.write(to: tmp)) != nil else { return nil }
+        return importImage(tmp, into: dir)
+    }
+
+    func setContactPhoto(_ contactId: UUID, path: String) {
+        guard let i = contacts.firstIndex(where: { $0.id == contactId }) else { return }
+        contacts[i].iconPath = path
+        contacts[i].iconSearched = true
+        save()
+    }
+
+    func setGroupPhoto(_ convId: UUID, path: String) {
+        guard let i = index(of: convId) else { return }
+        conversations[i].photoPath = path
+        save()
+    }
+
     func setContactPhoto(_ contactId: UUID, from url: URL) {
         guard let i = contacts.firstIndex(where: { $0.id == contactId }),
               let path = Store.importImage(url, into: Store.photosDir) else { return }

@@ -29,12 +29,13 @@ struct ChatView: View {
                         .padding(8).allowsHitTesting(false)
                 }
             }
-            .dropDestination(for: URL.self) { urls, _ in
-                let added = urls.compactMap { Store.importImage($0, into: Store.attachmentsDir) }
-                attached += added
-                focused = true
-                return !added.isEmpty
-            } isTargeted: { dropping = $0 }
+            .onDrop(of: ImageDrop.types, isTargeted: $dropping) { providers in
+                ImageDrop.load(providers, into: Store.attachmentsDir) { added in
+                    attached += added
+                    focused = true
+                }
+                return true
+            }
             .background(Color(nsColor: .textBackgroundColor))
             .sheet(isPresented: $showInfo) { InfoSheet(convId: convId).environmentObject(store) }
             .onAppear { focused = true; store.markRead(convId) }
@@ -50,12 +51,14 @@ struct ChatView: View {
                 VStack(spacing: 3) {
                     GroupAvatar(ids: conv.participantIds, size: 44, photo: conv.photoPath)
                         .overlay(Circle().stroke(Palette.blue, lineWidth: photoDrop ? 3 : 0).padding(-3))
-                        .dropDestination(for: URL.self) { urls, _ in
-                            guard let u = urls.first else { return false }
-                            if conv.isGroup { store.setGroupPhoto(convId, from: u) }
-                            else if let c = conv.participantIds.first { store.setContactPhoto(c, from: u) }
+                        .onDrop(of: ImageDrop.types, isTargeted: $photoDrop) { providers in
+                            ImageDrop.load(Array(providers.prefix(1)), into: Store.photosDir) { paths in
+                                guard let p = paths.first else { return }
+                                if conv.isGroup { store.setGroupPhoto(convId, path: p) }
+                                else if let c = conv.participantIds.first { store.setContactPhoto(c, path: p) }
+                            }
                             return true
-                        } isTargeted: { photoDrop = $0 }
+                        }
                         .help("Drop a picture here to make it the photo")
                     HStack(spacing: 2) {
                         Text(store.title(for: conv)).font(.caption.weight(.medium)).foregroundStyle(.primary)
