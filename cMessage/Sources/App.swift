@@ -1,0 +1,85 @@
+import SwiftUI
+
+@main
+struct CMessageApp: App {
+    @StateObject private var store = Store()
+
+    var body: some Scene {
+        WindowGroup("cMessage") {
+            ContentView()
+                .environmentObject(store)
+                .frame(minWidth: 760, minHeight: 480)
+                .onAppear { Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")") }
+        }
+        .windowToolbarStyle(.unified(showsTitle: false))
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("New Message") { NotificationCenter.default.post(name: .newMessage, object: nil) }
+                    .keyboardShortcut("n")
+                Button("Contacts") { NotificationCenter.default.post(name: .showContacts, object: nil) }
+                    .keyboardShortcut("k")
+            }
+        }
+    }
+}
+
+extension Notification.Name {
+    static let newMessage = Notification.Name("cmessage.newMessage")
+    static let showContacts = Notification.Name("cmessage.showContacts")
+}
+
+// MARK: - Look
+
+enum Palette {
+    static let blue = Color(red: 0.04, green: 0.52, blue: 1.0)
+    static let gradients: [[Color]] = [
+        [Color(red: 0.55, green: 0.60, blue: 0.68), Color(red: 0.40, green: 0.44, blue: 0.52)],
+        [Color(red: 0.99, green: 0.62, blue: 0.35), Color(red: 0.96, green: 0.40, blue: 0.24)],
+        [Color(red: 0.42, green: 0.78, blue: 0.98), Color(red: 0.16, green: 0.52, blue: 0.94)],
+        [Color(red: 0.55, green: 0.88, blue: 0.50), Color(red: 0.20, green: 0.66, blue: 0.36)],
+        [Color(red: 0.84, green: 0.56, blue: 0.98), Color(red: 0.58, green: 0.30, blue: 0.90)],
+        [Color(red: 1.00, green: 0.55, blue: 0.66), Color(red: 0.92, green: 0.26, blue: 0.44)],
+        [Color(red: 0.99, green: 0.84, blue: 0.36), Color(red: 0.95, green: 0.62, blue: 0.14)],
+        [Color(red: 0.40, green: 0.88, blue: 0.84), Color(red: 0.10, green: 0.62, blue: 0.64)],
+    ]
+}
+
+struct Avatar: View {
+    let contact: Contact?
+    var size: CGFloat = 40
+
+    var body: some View {
+        let g = Palette.gradients[abs(contact?.colorIndex ?? 0) % Palette.gradients.count]
+        ZStack {
+            Circle().fill(LinearGradient(colors: g, startPoint: .top, endPoint: .bottom))
+            Text(contact?.initials ?? "?")
+                .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+            if contact?.isSubContact == true {
+                // Small ring marks a sub-contact so it reads as "part of" a project.
+                Circle().strokeBorder(.white.opacity(0.55), lineWidth: max(1, size * 0.04)).padding(size * 0.06)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+struct GroupAvatar: View {
+    @EnvironmentObject var store: Store
+    let ids: [UUID]
+    var size: CGFloat = 40
+
+    var body: some View {
+        if ids.count <= 1 {
+            Avatar(contact: store.contact(ids.first), size: size)
+        } else {
+            ZStack {
+                Avatar(contact: store.contact(ids[0]), size: size * 0.66).offset(x: -size * 0.17, y: -size * 0.17)
+                Avatar(contact: store.contact(ids[1]), size: size * 0.66)
+                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
+                    .offset(x: size * 0.17, y: size * 0.17)
+            }
+            .frame(width: size, height: size)
+        }
+    }
+}

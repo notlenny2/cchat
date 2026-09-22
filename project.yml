@@ -1,0 +1,34 @@
+name: cMessage
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  cMessage:
+    type: application
+    platform: macOS
+    sources:
+      - cMessage/Sources
+      - cMessage/Resources
+    info:
+      path: cMessage/Info.plist
+      properties:
+        CFBundleDisplayName: cMessage
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.productivity
+        NSHumanReadableCopyright: "example"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage
+        # The app launches the local `claude` CLI, so it cannot run inside the App Sandbox.
+        ENABLE_APP_SANDBOX: NO
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

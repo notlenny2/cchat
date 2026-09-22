@@ -1,0 +1,363 @@
+import Foundation
+import SwiftUI
+
+@MainActor
+final class Store: ObservableObject {
+    @Published var contacts: [Contact] = []
+    @Published var conversations: [Conversation] = []
+    @Published var selectedId: UUID?
+    /// conversationId -> contact currently "typing".
+    @Published var typing: [UUID: UUID] = [:]
+
+    private var tasks: [UUID: Task<Void, Never>] = [:]
+
+    static let fileURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("cMessage", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("store.json")
+    }()
+
+    init() { load() }
+
+    // MARK: Persistence
+
+    private func load() {
+        guard let data = try? Data(contentsOf: Self.fileURL) else { return }
+        do {
+            let d = try JSONDecoder().decode(StoreData.self, from: data)
+            contacts = d.contacts
+            conversations = d.conversations
+            // Anything owed a reply when the app last quit is dropped rather than silently re-run.
+            for i in conversations.indices { conversations[i].pending = [] }
+        } catch {
+            Log.error("store load failed: \(error)")
+            try? data.write(to: Self.fileURL.appendingPathExtension("corrupt-\(Int(Date().timeIntervalSince1970))"))
+        }
+    }
+
+    func save() {
+        do {
+            let data = try JSONEncoder().encode(StoreData(contacts: contacts, conversations: conversations))
+            try data.write(to: Self.fileURL, options: [.atomic])
+        } catch { Log.error("store save failed: \(error)") }
+    }
+
+    // MARK: Lookup
+
+    func contact(_ id: UUID?) -> Contact? { contacts.first { $0.id == id } }
+    func index(of convId: UUID) -> Int? { conversations.firstIndex { $0.id == convId } }
+    var projects: [Contact] { contacts.filter { !$0.isSubContact }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
+    func subContacts(of id: UUID) -> [Contact] { contacts.filter { $0.parentId == id } }
+
+    var visibleConversations: [Conversation] {
+        conversations.filter { !$0.hidden }.sorted { $0.lastDate > $1.lastDate }
+    }
+
+    func title(for c: Conversation) -> String {
+        if let t = c.title, !t.isEmpty { return t }
+        let names = c.participantIds.compactMap { contact($0) }.map(displayName)
+        return names.isEmpty ? "Nobody" : names.joined(separator: ", ")
+    }
+
+    /// "Website UX" for a sub-contact, "Website" for a project.
+    func displayName(_ c: Contact) -> String {
+        guard let p = contact(c.parentId) else { return c.name }
+        return "\(p.name) \(c.name)"
+    }
+
+    // MARK: Contacts
+
+    @discardableResult
+    func addProject(path: String) -> Contact {
+        if let existing = contacts.first(where: { !$0.isSubContact && $0.projectPath == path }) { return existing }
+        let folder = URL(fileURLWithPath: path).lastPathComponent
+        let c = Contact(name: prettify(folder), projectPath: path, colorIndex: contacts.count)
+        contacts.append(c)
+        save()
+        return c
+    }
+
+    @discardableResult
+    func addSubContact(to project: Contact, name: String, role: String) -> Contact {
+        let c = Contact(name: name, projectPath: project.projectPath, parentId: project.id,
+                        role: role, model: project.model, fullAccess: project.fullAccess,
+                        colorIndex: contacts.count)
+        contacts.append(c)
+        save()
+        return c
+    }
+
+    func update(_ c: Contact) {
+        guard let i = contacts.firstIndex(where: { $0.id == c.id }) else { return }
+        let old = contacts[i]
+        contacts[i] = c
+        // Sub-contacts follow their project if it moves folders.
+        if !c.isSubContact && old.projectPath != c.projectPath {
+            for j in contacts.indices where contacts[j].parentId == c.id && contacts[j].projectPath == old.projectPath {
+                contacts[j].projectPath = c.projectPath
+            }
+        }
+        save()
+    }
+
+    func delete(_ c: Contact) {
+        let ids = Set([c.id] + subContacts(of: c.id).map(\.id))
+        for id in ids { stopAll(involving: id) }
+        contacts.removeAll { ids.contains($0.id) }
+        for i in conversations.indices {
+            conversations[i].participantIds.removeAll { ids.contains($0) }
+        }
+        conversations.removeAll { $0.participantIds.isEmpty }
+        if let s = selectedId, index(of: s) == nil { selectedId = nil }
+        save()
+    }
+
+    /// Wipes this contact's memory in every chat. Next message starts a fresh Claude session.
+    func forget(_ c: Contact) {
+        for i in conversations.indices where conversations[i].sessions[c.id.uuidString] != nil {
+            conversations[i].sessions[c.id.uuidString] = nil
+            conversations[i].messages.append(Message(senderId: nil, text: "\(displayName(c)) is starting with a fresh memory.", kind: .system))
+        }
+        save()
+    }
+
+    // MARK: Conversations
+
+    /// Opens (or brings back) the 1:1 chat with a contact, memory intact.
+    func openChat(with c: Contact) {
+        if let i = conversations.firstIndex(where: { $0.participantIds == [c.id] }) {
+            conversations[i].hidden = false
+            selectedId = conversations[i].id
+        } else {
+            let conv = Conversation(participantIds: [c.id])
+            conversations.append(conv)
+            selectedId = conv.id
+        }
+        save()
+    }
+
+    func openGroup(_ ids: [UUID], title: String?) {
+        if ids.count == 1, let c = contact(ids[0]) { openChat(with: c); return }
+        let conv = Conversation(participantIds: ids, title: title?.isEmpty == true ? nil : title)
+        conversations.append(conv)
+        selectedId = conv.id
+        save()
+    }
+
+    func hide(_ convId: UUID) {
+        guard let i = index(of: convId) else { return }
+        stop(convId)
+        conversations[i].hidden = true
+        if selectedId == convId { selectedId = nil }
+        save()
+    }
+
+    func deleteForever(_ convId: UUID) {
+        stop(convId)
+        conversations.removeAll { $0.id == convId }
+        if selectedId == convId { selectedId = nil }
+        save()
+    }
+
+    func setParticipants(_ convId: UUID, _ ids: [UUID], title: String?) {
+        guard let i = index(of: convId) else { return }
+        conversations[i].participantIds = ids
+        conversations[i].title = title?.isEmpty == true ? nil : title
+        save()
+    }
+
+    func markRead(_ convId: UUID) {
+        guard let i = index(of: convId), conversations[i].unread else { return }
+        conversations[i].unread = false
+        save()
+    }
+
+    // MARK: Sending
+
+    func send(_ raw: String, in convId: UUID) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let i = index(of: convId) else { return }
+        conversations[i].messages.append(Message(senderId: nil, text: text))
+        conversations[i].suggestions = []
+        for id in responders(for: text, in: conversations[i]) where !conversations[i].pending.contains(id) {
+            conversations[i].pending.append(id)
+        }
+        save()
+        pump(convId)
+    }
+
+    /// In a group, naming someone ("@UX" or "UX, what do you think") narrows who answers.
+    /// Anyone with "director" in their name goes last so they can sum up.
+    private func responders(for text: String, in conv: Conversation) -> [UUID] {
+        let people = conv.participantIds.compactMap { contact($0) }
+        guard conv.isGroup else { return people.map(\.id) }
+        let lower = text.lowercased()
+        let named = people.filter { c in
+            let n = c.name.lowercased()
+            return lower.contains("@\(n)") || lower.hasPrefix("\(n),") || lower.hasPrefix("\(n):")
+                || lower.contains("@\(displayName(c).lowercased())")
+        }
+        let chosen = named.isEmpty ? people : named
+        let directors = chosen.filter { $0.name.lowercased().contains("director") }
+        return (chosen.filter { !$0.name.lowercased().contains("director") } + directors).map(\.id)
+    }
+
+    func isBusy(_ convId: UUID) -> Bool { tasks[convId] != nil }
+
+    func stop(_ convId: UUID) {
+        tasks[convId]?.cancel()
+        tasks[convId] = nil
+        typing[convId] = nil
+        if let i = index(of: convId) { conversations[i].pending = [] }
+    }
+
+    private func stopAll(involving contactId: UUID) {
+        for c in conversations where c.participantIds.contains(contactId) { stop(c.id) }
+    }
+
+    /// Works through the chat's queue one agent at a time, so in a group each agent sees what the
+    /// ones before it just said. New texts that land mid-reply are picked up on the next loop.
+    private func pump(_ convId: UUID) {
+        guard tasks[convId] == nil else { return }
+        tasks[convId] = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled, let i = self.index(of: convId), !self.conversations[i].pending.isEmpty {
+                let agentId = self.conversations[i].pending.removeFirst()
+                await self.runTurn(agentId, in: convId)
+            }
+            self.tasks[convId] = nil
+            self.typing[convId] = nil
+            self.save()
+        }
+    }
+
+    private func runTurn(_ agentId: UUID, in convId: UUID) async {
+        guard let i = index(of: convId), let agent = contact(agentId) else { return }
+        let conv = conversations[i]
+        let key = agentId.uuidString
+        let seen = min(conv.seenCount[key] ?? 0, conv.messages.count)
+        let fresh = conv.messages[seen...].filter { $0.senderId != agentId && $0.kind == .normal }
+        guard !fresh.isEmpty else { return }
+        let endIndex = conv.messages.count
+
+        let prompt: String
+        if conv.isGroup {
+            prompt = fresh.map { m in
+                let who = m.senderId.flatMap { contact($0) }.map(displayName) ?? "the user"
+                return "\(who): \(m.text)"
+            }.joined(separator: "\n\n")
+        } else {
+            prompt = fresh.map(\.text).joined(separator: "\n\n")
+        }
+
+        typing[convId] = agentId
+        var session = conv.sessions[key]
+        let fork = session != nil && (conv.forkNext ?? []).contains(key)
+        do {
+            var result: ClaudeResult
+            do {
+                result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
+                                                   systemPrompt: systemPrompt(for: agent, in: conv),
+                                                   model: agent.model, fullAccess: agent.fullAccess, fork: fork)
+                // A resume can fail if the old session was cleaned up. Start fresh once rather than dying.
+                if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("conversation") {
+                    Log.info("resume failed for \(agent.name), starting fresh")
+                    session = nil
+                    result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
+                                                       systemPrompt: systemPrompt(for: agent, in: conv),
+                                                       model: agent.model, fullAccess: agent.fullAccess)
+                }
+            }
+            guard let j = index(of: convId) else { return }
+            if let sid = result.sessionId {
+                conversations[j].sessions[key] = sid
+                conversations[j].forkNext?.removeAll { $0 == key }
+            }
+            conversations[j].seenCount[key] = endIndex
+
+            if result.isError {
+                conversations[j].messages.append(Message(senderId: agentId, text: result.text.isEmpty ? "Something went wrong on my end." : result.text, kind: .error))
+            } else {
+                let (body, next) = Self.parse(result.text)
+                let pass = conv.isGroup && body.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("PASS")
+                if !pass && !body.isEmpty {
+                    conversations[j].messages.append(Message(senderId: agentId, text: body))
+                    if !next.isEmpty { conversations[j].suggestions = next }
+                    if selectedId != convId { conversations[j].unread = true }
+                }
+                if !result.deniedTools.isEmpty {
+                    let tools = Array(Set(result.deniedTools)).sorted().joined(separator: ", ")
+                    conversations[j].messages.append(Message(senderId: agentId, text: "\(displayName(agent)) was blocked from using: \(tools). Turn on Full Access in their info if you trust it.", kind: .system))
+                }
+            }
+        } catch is CancellationError {
+            Log.info("turn cancelled for \(agent.name)")
+            if let j = index(of: convId) {
+                conversations[j].messages.append(Message(senderId: nil, text: "Stopped.", kind: .system))
+            }
+        } catch {
+            Log.error("turn failed for \(agent.name): \(error)")
+            if let j = index(of: convId) {
+                conversations[j].messages.append(Message(senderId: agentId, text: error.localizedDescription, kind: .error))
+            }
+        }
+        if typing[convId] == agentId { typing[convId] = nil }
+        save()
+    }
+
+    // MARK: Prompting
+
+    private func systemPrompt(for agent: Contact, in conv: Conversation) -> String {
+        var s = "You are \(displayName(agent)), texting with the user in cMessage, a text-message style app."
+        if !agent.role.isEmpty { s += "\nYour role: \(agent.role)" }
+        s += "\nYou work in the project folder \(agent.projectPath). Read its CLAUDE.md for context when it matters."
+        s += """
+
+        How to reply:
+        - Write like a text message: short, casual, plain English. the user is not a developer and never sees code.
+        - Never paste code, diffs, file contents, commands or file paths in your reply. Do the work with your tools as normal, then say in a sentence or two what you did or found.
+        - One question at a time. No em dashes. No headings or bullet lists unless the user asks.
+        - Never say you did something unless a tool actually did it.
+        - At the very end of every reply add one line exactly like this:
+        <<next: first idea | second idea | third idea>>
+        These are 2 or 3 things the user will most likely want next, under 6 words each, written the way the user would text them to you.
+        """
+        if conv.isGroup {
+            let others = conv.participantIds.filter { $0 != agent.id }.compactMap { contact($0) }
+                .map { c in c.role.isEmpty ? displayName(c) : "\(displayName(c)) (\(c.role.prefix(80)))" }
+            s += """
+
+            This is a group chat\(conv.title.map { " called \"\($0)\"" } ?? "") with the user and: \(others.joined(separator: "; ")).
+            New messages arrive as "Name: text". Speak only as yourself, in one voice. Never write lines for the other people here or for any other persona or team member; they answer for themselves.
+            Stay in your own lane, build on or push back on what others said, never repeat them.
+            If you have nothing useful to add, reply with exactly PASS and nothing else.
+            """
+        }
+        return s
+    }
+
+    /// Pulls the `<<next: a | b | c>>` line off the end and hides any code blocks that slip through.
+    static func parse(_ text: String) -> (String, [String]) {
+        var body = text
+        var next: [String] = []
+        if let r = body.range(of: #"<<\s*next\s*:(.*?)>>"#, options: [.regularExpression, .caseInsensitive]) {
+            let inner = body[r].dropFirst(2).dropLast(2)
+            let afterColon = inner.split(separator: ":", maxSplits: 1).dropFirst().first ?? ""
+            next = afterColon.split(separator: "|")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .prefix(3).map { String($0) }
+            body.removeSubrange(r)
+        }
+        body = body.replacingOccurrences(of: #"```[\s\S]*?```"#, with: "(code hidden)", options: .regularExpression)
+        return (body.trimmingCharacters(in: .whitespacesAndNewlines), next)
+    }
+
+    private func prettify(_ folder: String) -> String {
+        let spaced = folder.replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
+        return spaced.split(separator: " ").map { w in
+            w.first!.isUppercase ? String(w) : w.prefix(1).uppercased() + w.dropFirst()
+        }.joined(separator: " ")
+    }
+}
