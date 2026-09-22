@@ -60,6 +60,9 @@ struct Conversation: Identifiable, Codable, Hashable {
     var forkNext: [String]? = nil
     /// Pinned chats sit in the big-avatar row at the top of the sidebar, like iMessage.
     var pinned: Bool? = nil
+    /// Set when the user texts a group without naming anyone: before anyone answers, a quick call
+    /// picks the agent (or agents) best suited to the message.
+    var routeNext: Bool? = nil
     var isPinned: Bool { pinned == true }
 
     var isGroup: Bool { participantIds.count > 1 }

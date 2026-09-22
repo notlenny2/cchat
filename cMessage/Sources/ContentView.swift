@@ -5,6 +5,9 @@ struct ContentView: View {
     @State private var search = ""
     @State private var showNew = false
     @State private var showContacts = false
+    @State private var renaming: Conversation?
+    @State private var newName = ""
+    @State private var dropTarget: UUID?
 
     var body: some View {
         NavigationSplitView {
@@ -45,6 +48,17 @@ struct ContentView: View {
                 ConversationRow(conv: c)
                     .tag(c.id)
                     .contextMenu { chatMenu(c) }
+                    .draggable(c.id.uuidString) {
+                        HStack { GroupAvatar(ids: c.participantIds, size: 28); Text(store.title(for: c)) }
+                            .padding(6).background(.regularMaterial, in: Capsule())
+                    }
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let s = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+                        return withAnimation { store.merge(s, into: c.id) != nil }
+                    } isTargeted: { on in
+                        if on { dropTarget = c.id } else if dropTarget == c.id { dropTarget = nil }
+                    }
+                    .listRowBackground(dropTarget == c.id ? RoundedRectangle(cornerRadius: 8).fill(Palette.blue.opacity(0.25)) : nil)
             }
         }
         .listStyle(.sidebar)
@@ -58,10 +72,24 @@ struct ContentView: View {
             }
         }
         .onChange(of: store.selectedId) { _, id in if let id { store.markRead(id) } }
+        .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Save") { if let r = renaming { store.rename(r.id, to: newName) }; renaming = nil }
+            Button("Use Default Name") { if let r = renaming { store.rename(r.id, to: "") }; renaming = nil }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        } message: {
+            Text("Tip: drag one chat onto another to put them in a group.")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .renameChat)) { n in
+            if let id = n.object as? UUID, let c = store.conversations.first(where: { $0.id == id }) {
+                newName = store.title(for: c); renaming = c
+            }
+        }
     }
 
     @ViewBuilder private func chatMenu(_ c: Conversation) -> some View {
         Button(c.isPinned ? "Unpin" : "Pin") { withAnimation { store.togglePin(c.id) } }
+        Button("Rename…") { newName = store.title(for: c); renaming = c }
         Divider()
         Button("Hide Chat (keeps memory)") { store.hide(c.id) }
         Button("Delete Chat and Memory", role: .destructive) { store.deleteForever(c.id) }

@@ -41,7 +41,16 @@ struct ChatView: View {
                 }
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                Button("Rename…") { NotificationCenter.default.post(name: .renameChat, object: convId) }
+            }
             Spacer()
+        }
+        .overlay(alignment: .leading) {
+            Button { NotificationCenter.default.post(name: .renameChat, object: convId) } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Rename chat").padding(.leading, 16)
         }
         .overlay(alignment: .trailing) {
             if store.isBusy(convId) {
@@ -53,7 +62,7 @@ struct ChatView: View {
     }
 
     private func subtitle(_ conv: Conversation) -> String? {
-        if conv.isGroup { return "\(conv.participantIds.count) agents" }
+        if conv.isGroup { return "\(conv.participantIds.count) agents · the right one answers, or @name someone" }
         guard let c = store.contact(conv.participantIds.first) else { return nil }
         return URL(fileURLWithPath: c.projectPath).lastPathComponent + (c.fullAccess ? " · full access" : "")
     }

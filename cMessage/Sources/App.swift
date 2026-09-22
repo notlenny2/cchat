@@ -51,6 +51,7 @@ struct CMessageApp: App {
 extension Notification.Name {
     static let newMessage = Notification.Name("cmessage.newMessage")
     static let showContacts = Notification.Name("cmessage.showContacts")
+    static let renameChat = Notification.Name("cmessage.renameChat")
 }
 
 // MARK: - Look

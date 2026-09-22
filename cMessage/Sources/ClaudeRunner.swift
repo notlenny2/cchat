@@ -121,6 +121,41 @@ enum ClaudeRunner {
         return ClaudeResult(text: text, sessionId: obj["session_id"] as? String, deniedTools: denied, isError: isError)
     }
 
+    /// A quick, tool-less, memory-less call used for small decisions (like who in a group should
+    /// answer). Skips the user's settings, CLAUDE.md files and MCP servers so it costs a fraction of a cent.
+    static func quick(prompt: String, system: String, model: String = "haiku") async throws -> String {
+        guard let claude = claudePath else { throw RunnerError.claudeNotFound }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: claude)
+        process.arguments = ["-p", "--output-format", "json", "--model", model, "--tools", "",
+                             "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "",
+                             "--system-prompt", system]
+        process.currentDirectoryURL = FileManager.default.temporaryDirectory
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = loginPath
+        env.removeValue(forKey: "CLAUDECODE")
+        process.environment = env
+        let stdin = Pipe(), stdout = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = stdout
+        process.standardError = Pipe()
+        let outBuf = DataBox()
+        stdout.fileHandleForReading.readabilityHandler = { outBuf.append($0.availableData) }
+        let _: Int32 = try await withCheckedThrowingContinuation { cont in
+            process.terminationHandler = { cont.resume(returning: $0.terminationStatus) }
+            do {
+                try process.run()
+                stdin.fileHandleForWriting.write(prompt.data(using: .utf8) ?? Data())
+                try? stdin.fileHandleForWriting.close()
+            } catch { process.terminationHandler = nil; cont.resume(throwing: error) }
+        }
+        stdout.fileHandleForReading.readabilityHandler = nil
+        outBuf.append(stdout.fileHandleForReading.readDataToEndOfFile())
+        guard let o = try? JSONSerialization.jsonObject(with: outBuf.data) as? [String: Any],
+              let r = o["result"] as? String else { throw RunnerError.failed("Quick call returned nothing") }
+        return r
+    }
+
     private static func firstLine(_ s: String) -> String? {
         s.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
     }
