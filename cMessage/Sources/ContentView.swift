@@ -22,6 +22,8 @@ struct ContentView: View {
                 emptyState
             }
         }
+        // No stock white title bar over the chat: the chat header's color runs up under it.
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .sheet(isPresented: $showNew) { NewMessageSheet().environmentObject(store) }
         .sheet(isPresented: $showContacts) { ContactsSheet().environmentObject(store) }
         .onReceive(NotificationCenter.default.publisher(for: .newMessage)) { _ in showNew = true }
@@ -127,7 +129,7 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Clay.canvas)
+        .background(Clay.canvas.ignoresSafeArea())
     }
 }
 
@@ -200,13 +202,14 @@ struct PinnedGrid: View {
                                         .padding(.horizontal, 6).padding(.vertical, 5)
                                         .clayCapsule(Clay.cream, depth: 0.7)
                                         .offset(x: 8, y: -4)
-                                } else if c.unread {
-                                    Circle().fill(Palette.blue).frame(width: 12, height: 12).offset(x: 2, y: 2)
                                 }
                             }
                             .overlay(Circle().stroke(selected == c.id ? Palette.blue : .clear, lineWidth: 2.5).padding(-3))
-                        Text(store.title(for: c)).font(.caption).lineLimit(1)
-                            .foregroundStyle(selected == c.id ? Clay.terracotta : Clay.ink)
+                        HStack(spacing: 4) {
+                            if c.unread { Circle().fill(Palette.blue).frame(width: 7, height: 7) }
+                            Text(store.title(for: c)).font(.caption).lineLimit(1)
+                                .foregroundStyle(selected == c.id ? Clay.terracotta : Clay.ink)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())

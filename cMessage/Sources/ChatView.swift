@@ -16,7 +16,7 @@ struct ChatView: View {
         if let conv {
             VStack(spacing: 0) {
                 header(conv)
-                    .background(Clay.sidebar.opacity(0.55))
+                    .background(Clay.sidebar.opacity(0.55).ignoresSafeArea(edges: .top))
                     .overlay(alignment: .bottom) { Rectangle().fill(Clay.shadow.opacity(0.08)).frame(height: 1) }
                 transcript(conv)
                 composer(conv)
@@ -37,7 +37,7 @@ struct ChatView: View {
                 }
                 return true
             }
-            .background(Clay.canvas)
+            .background(Clay.canvas.ignoresSafeArea())
             .foregroundStyle(Clay.ink)
             .sheet(isPresented: $showInfo) { InfoSheet(convId: convId).environmentObject(store) }
             .onAppear { focused = true; store.markRead(convId) }

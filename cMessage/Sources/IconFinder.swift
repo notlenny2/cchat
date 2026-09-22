@@ -76,9 +76,33 @@ enum IconCache {
     static func image(_ path: String?) -> NSImage? {
         guard let path else { return nil }
         if let i = images[path] { return i }
-        guard let i = NSImage(contentsOfFile: path) else { return nil }
+        guard let raw = NSImage(contentsOfFile: path) else { return nil }
+        let i = trimmed(raw) ?? raw
         images[path] = i
         return i
+    }
+
+    /// Crops away a see-through border (a Mac app icon is a tile with empty space and a shadow around it),
+    /// so the picture fills its circle. Mostly-clear pixels (the soft shadow) count as border.
+    private static func trimmed(_ img: NSImage) -> NSImage? {
+        guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              cg.alphaInfo != .none, cg.alphaInfo != .noneSkipLast, cg.alphaInfo != .noneSkipFirst else { return nil }
+        let w = min(cg.width, 256), h = min(cg.height, 256)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let px = ctx.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h { for x in 0..<w where px[(y * w + x) * 4 + 3] > 200 {
+            minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+        } }
+        guard maxX > minX, maxY > minY, maxX - minX < w * 95 / 100 || maxY - minY < h * 95 / 100 else { return nil }
+        // Back to the full-size image's pixels (the bitmap and CGImage cropping both count rows from the top).
+        let sx = Double(cg.width) / Double(w), sy = Double(cg.height) / Double(h)
+        let rect = CGRect(x: Double(minX) * sx, y: Double(minY) * sy,
+                          width: Double(maxX - minX + 1) * sx, height: Double(maxY - minY + 1) * sy).integral
+        guard let cut = cg.cropping(to: rect) else { return nil }
+        return NSImage(cgImage: cut, size: NSSize(width: cut.width, height: cut.height))
     }
 }
 
@@ -105,6 +129,17 @@ extension Store {
 
     /// Sub-contacts wear their project's icon unless they have their own.
     func iconPath(for c: Contact) -> String? {
-        c.iconPath ?? contact(c.parentId)?.iconPath
+        guard let p = c.iconPath ?? contact(c.parentId)?.iconPath else { return nil }
+        return Self.matchingBuild(p)
+    }
+
+    /// A contact saved with one build's app icon (e.g. cChat's orange AppIcon) wears the icon set that
+    /// matches the build running now, when the project has both side by side.
+    nonisolated static func matchingBuild(_ path: String) -> String {
+        let (from, to) = Flavor.personal ? ("/AppIcon.appiconset/", "/AppIconPersonal.appiconset/")
+                                         : ("/AppIconPersonal.appiconset/", "/AppIcon.appiconset/")
+        guard path.contains(from) else { return path }
+        let swapped = path.replacingOccurrences(of: from, with: to)
+        return FileManager.default.fileExists(atPath: swapped) ? swapped : path
     }
 }

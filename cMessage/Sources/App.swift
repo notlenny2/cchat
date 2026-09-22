@@ -114,7 +114,7 @@ struct Avatar: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, size * 0.07).padding(.vertical, size * 0.03)
                     .background(Capsule().fill(LinearGradient(colors: g, startPoint: .top, endPoint: .bottom)))
-                    .overlay(Capsule().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+                    .overlay(Capsule().stroke(Clay.cream, lineWidth: 1.5))
                     .offset(x: size * 0.08, y: size * 0.04)
             }
         }
@@ -147,11 +147,17 @@ struct GroupAvatar: View {
         } else if ids.count <= 1 {
             Avatar(contact: store.contact(ids.first), size: size)
         } else {
+            // Like iMessage groups: the members sit inside one clay circle, apart, never piled on each other.
+            let three = ids.count >= 3
+            let d = size * (three ? 0.36 : 0.46)
+            let spots: [CGPoint] = three
+                ? [CGPoint(x: 0, y: -0.21), CGPoint(x: -0.215, y: 0.155), CGPoint(x: 0.215, y: 0.155)]
+                : [CGPoint(x: -0.19, y: -0.12), CGPoint(x: 0.19, y: 0.12)]
             ZStack {
-                Avatar(contact: store.contact(ids[0]), size: size * 0.66).offset(x: -size * 0.17, y: -size * 0.17)
-                Avatar(contact: store.contact(ids[1]), size: size * 0.66)
-                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
-                    .offset(x: size * 0.17, y: size * 0.17)
+                ClaySurface(shape: Circle(), color: Clay.peach, depth: 0.7)
+                ForEach(Array(zip(ids.prefix(spots.count), spots)), id: \.0) { id, p in
+                    Avatar(contact: store.contact(id), size: d).offset(x: p.x * size, y: p.y * size)
+                }
             }
             .frame(width: size, height: size)
         }
