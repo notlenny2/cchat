@@ -36,6 +36,13 @@ enum IconFinder {
             if tokens.contains(where: { rel.contains($0) }) { score += 10 }
             if penalized.contains(where: { rel.contains($0) }) { score -= 20 }
             if rel.contains("ios") { score += 3 }
+            // A project with a personal and a public icon (cChat itself) should wear the one that
+            // matches this build: blue in the user's, orange in the public one.
+            #if CCHAT_PERSONAL
+            if rel.contains("personal") { score += 8 }
+            #else
+            if rel.contains("personal") { score -= 8 }
+            #endif
             score -= e.level
             if last == "AppIcon.appiconset" || last.hasSuffix(".appiconset") && last.lowercased().contains("appicon") {
                 sets.append((url, score)); e.skipDescendants()
