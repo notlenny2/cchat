@@ -16,6 +16,12 @@ see their plain-English replies, never code or tool output.
 - **NodeTerm import.** Bring over the Claude chats open on a [NodeTerm](https://github.com/eneskirca/nodeterm)
   canvas, memory and all (it forks the session so the terminal's copy is untouched).
 
+## iPhone and iPad
+The Mac stays in charge and runs the agents; the iOS app is a remote screen for the same chats.
+On the Mac choose **Connect iPhone or iPad**, scan the QR code with the app, done. Traffic stays on your
+local network and every message is encrypted end to end with a key only your paired devices hold
+(ChaCha20-Poly1305, with replay protection).
+
 ## Requirements
 - macOS 14+, Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 - The `claude` CLI installed and signed in
@@ -23,8 +29,10 @@ see their plain-English replies, never code or tool output.
 ## Build
 ```
 xcodegen generate
+# Mac
 xcodebuild -project cMessage.xcodeproj -scheme cMessage -configuration Release -derivedDataPath build build
 cp -R build/Build/Products/Release/cMessage.app /Applications/
+# iPhone / iPad: open cMessage.xcodeproj, pick the cMessageMobile scheme, set your team, run
 ```
 
 ## How it works

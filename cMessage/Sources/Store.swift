@@ -7,7 +7,9 @@ final class Store: ObservableObject {
     @Published var conversations: [Conversation] = []
     @Published var selectedId: UUID?
     /// conversationId -> contact currently "typing".
-    @Published var typing: [UUID: UUID] = [:]
+    @Published var typing: [UUID: UUID] = [:] { didSet { version += 1 } }
+    /// Goes up on every change, so the iPhone/iPad app can ask "anything new since N?".
+    private(set) var version = 0
 
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
@@ -39,6 +41,7 @@ final class Store: ObservableObject {
     }
 
     func save() {
+        version += 1
         do {
             let data = try JSONEncoder().encode(StoreData(contacts: contacts, conversations: conversations))
             try data.write(to: Self.fileURL, options: [.atomic])
@@ -254,7 +257,7 @@ final class Store: ObservableObject {
     }
 
     /// Stand-in "typing" id while the group is deciding who should answer.
-    static let routerId = UUID(uuidString: "00000000-0000-0000-0000-00000000C0DE")!
+    static let routerId = routerTypingId
 
     /// Who answers without needing a decision: the one agent in a 1:1, anyone the user named in a group
     /// ("@UX" or "UX, ..."), or everyone if he addresses the whole group. nil = let the group decide.

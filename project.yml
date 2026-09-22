@@ -13,6 +13,7 @@ targets:
     type: application
     platform: macOS
     sources:
+      - Shared
       - cMessage/Sources
       - cMessage/Resources
     info:
@@ -31,4 +32,37 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  cMessageMobile:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - Shared
+      - Mobile/Sources
+      - Mobile/Resources
+    info:
+      path: Mobile/Info.plist
+      properties:
+        CFBundleDisplayName: cMessage
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        NSCameraUsageDescription: "Scan the code on your Mac to link cMessage."
+        NSLocalNetworkUsageDescription: "cMessage talks to your Mac on your Wi-Fi, where your agents run."
+        NSBonjourServices: ["_cmessage._tcp"]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: com.example.cmessage.pair
+            CFBundleURLSchemes: [cmessage]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage.mobile
+        TARGETED_DEVICE_FAMILY: "1,2"
+        DEVELOPMENT_TEAM: XXXXXXXXXX
+        CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

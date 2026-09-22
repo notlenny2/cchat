@@ -31,6 +31,7 @@ struct CMessageApp: App {
                 .onAppear {
                     Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
+                    RemoteServer.shared.attach(store)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
                     WindowRescue.run()
@@ -43,6 +44,8 @@ struct CMessageApp: App {
                     .keyboardShortcut("n")
                 Button("Contacts") { NotificationCenter.default.post(name: .showContacts, object: nil) }
                     .keyboardShortcut("k")
+                Divider()
+                Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
             }
         }
     }
@@ -52,6 +55,7 @@ extension Notification.Name {
     static let newMessage = Notification.Name("cmessage.newMessage")
     static let showContacts = Notification.Name("cmessage.showContacts")
     static let renameChat = Notification.Name("cmessage.renameChat")
+    static let showPairing = Notification.Name("cmessage.showPairing")
 }
 
 // MARK: - Look

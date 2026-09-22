@@ -5,6 +5,7 @@ struct ContentView: View {
     @State private var search = ""
     @State private var showNew = false
     @State private var showContacts = false
+    @State private var showPairing = false
     @State private var renaming: Conversation?
     @State private var newName = ""
     @State private var dropTarget: UUID?
@@ -24,6 +25,8 @@ struct ContentView: View {
         .sheet(isPresented: $showContacts) { ContactsSheet().environmentObject(store) }
         .onReceive(NotificationCenter.default.publisher(for: .newMessage)) { _ in showNew = true }
         .onReceive(NotificationCenter.default.publisher(for: .showContacts)) { _ in showContacts = true }
+        .onReceive(NotificationCenter.default.publisher(for: .showPairing)) { _ in showPairing = true }
+        .sheet(isPresented: $showPairing) { PairingSheet() }
         .onAppear { if store.contacts.isEmpty { showContacts = true } }
     }
 
@@ -65,6 +68,8 @@ struct ContentView: View {
         .searchable(text: $search, placement: .sidebar, prompt: "Search")
         .toolbar {
             ToolbarItemGroup {
+                Button { showPairing = true } label: { Image(systemName: "iphone") }
+                    .help("Connect iPhone or iPad")
                 Button { showContacts = true } label: { Image(systemName: "person.crop.circle") }
                     .help("Contacts")
                 Button { showNew = true } label: { Image(systemName: "square.and.pencil") }
