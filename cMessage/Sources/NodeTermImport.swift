@@ -12,6 +12,7 @@ enum NodeTermImport {
         var sessionId: String
         var cwd: String
         var lastReply: String?
+        var lastDate: Date?
     }
 
     private static let home = FileManager.default.homeDirectoryForCurrentUser
@@ -55,8 +56,9 @@ enum NodeTermImport {
                       let cwd = sessionCwd(file) else { continue }
                 seenSessions.insert(sid)
                 let title = (n["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Chat"
+                let last = lastAssistant(file)
                 chats.append(Chat(nodeId: id, projectName: projectName, title: title, sessionId: sid,
-                                  cwd: cwd, lastReply: lastAssistantText(file)))
+                                  cwd: cwd, lastReply: last?.text, lastDate: last?.date ?? modified(file)))
             }
         }
         Log.info("nodeterm scan: \(chats.count) chats with memory")
@@ -84,8 +86,12 @@ enum NodeTermImport {
         return nil
     }
 
-    /// The agent's last plain-text message, so the imported chat opens where it left off.
-    private static func lastAssistantText(_ file: URL) -> String? {
+    private static func modified(_ file: URL) -> Date? {
+        (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
+    /// The agent's last plain-text message and when it was sent, so the imported chat opens where it left off.
+    private static func lastAssistant(_ file: URL) -> (text: String, date: Date?)? {
         guard let h = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? h.close() }
         let size = (try? h.seekToEnd()) ?? 0
@@ -99,7 +105,11 @@ enum NodeTermImport {
                   let content = msg["content"] as? [[String: Any]] else { continue }
             let text = content.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
                 .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { return text }
+            if !text.isEmpty {
+                let f = ISO8601DateFormatter()
+                f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                return (text, (o["timestamp"] as? String).flatMap { f.date(from: $0) })
+            }
         }
         return nil
     }
@@ -123,11 +133,12 @@ extension Store {
             var conv = Conversation(participantIds: [c.id])
             conv.sessions[c.id.uuidString] = chat.sessionId
             conv.forkNext = [c.id.uuidString]
-            conv.messages.append(Message(senderId: nil, text: "Picked up from NodeTerm. Memory carried over; the terminal keeps its own copy.", kind: .system))
+            let when = chat.lastDate ?? Date()
+            conv.messages.append(Message(senderId: nil, text: "Picked up from NodeTerm. Memory carried over; the terminal keeps its own copy.", date: when, kind: .system))
             if let last = chat.lastReply {
                 var (body, _) = Store.parse(last)
                 if body.count > 700 { body = String(body.prefix(700)) + "…" }
-                conv.messages.append(Message(senderId: c.id, text: body))
+                conv.messages.append(Message(senderId: c.id, text: body, date: when))
             }
             // Everything so far is history the agent already has, so don't resend it.
             conv.seenCount[c.id.uuidString] = conv.messages.count

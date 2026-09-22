@@ -206,21 +206,30 @@ struct TypingRow: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             if isGroup { Avatar(contact: contact, size: 28) }
-            TimelineView(.animation) { ctx in
-                let t = ctx.date.timeIntervalSinceReferenceDate * 5
-                HStack(spacing: 4) {
-                    ForEach(0..<3) { i in
-                        Circle().fill(Color.secondary)
-                            .frame(width: 7, height: 7)
-                            .opacity(0.35 + 0.65 * max(0, sin(t - Double(i) * 0.9)))
-                    }
-                }
-            }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
+            TypingDots(dot: 7)
+                .padding(.horizontal, 14).padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
             if isGroup, let c = contact { Text("\(c.name) is typing").font(.caption2).foregroundStyle(.secondary) }
             Spacer()
         }
         .padding(.top, 6)
+    }
+}
+
+/// The three pulsing dots, used in the chat, the chat list and on pinned avatars.
+struct TypingDots: View {
+    var dot: CGFloat = 7
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate * 5
+            HStack(spacing: dot * 0.55) {
+                ForEach(0..<3) { i in
+                    Circle().fill(Color.secondary)
+                        .frame(width: dot, height: dot)
+                        .opacity(0.3 + 0.7 * max(0, sin(t - Double(i) * 0.9)))
+                }
+            }
+        }
     }
 }

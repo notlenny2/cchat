@@ -1,4 +1,23 @@
 import SwiftUI
+import AppKit
+
+/// macOS restores the window wherever it was last, which on the user's desk can be an AirPlay screen
+/// ("Studio") or a monitor that isn't there any more. At launch, always open on the primary display
+/// (the one with the menu bar); later, only step in if the window ends up on no screen at all.
+enum WindowRescue {
+    static func run(atLaunch: Bool = false) {
+        guard let primary = NSScreen.screens.first else { return }
+        for w in NSApp.windows where w.isVisible && w.styleMask.contains(.titled) {
+            let onScreen = NSScreen.screens.contains { $0.visibleFrame.intersects(w.frame) }
+            let onPrimary = primary.visibleFrame.intersects(w.frame)
+            guard atLaunch ? !onPrimary : !onScreen else { continue }
+            Log.info("window at \(w.frame) moved to primary display")
+            let v = primary.visibleFrame
+            let size = NSSize(width: min(max(w.frame.width, 1000), v.width), height: min(max(w.frame.height, 680), v.height))
+            w.setFrame(NSRect(x: v.midX - size.width / 2, y: v.midY - size.height / 2, width: size.width, height: size.height), display: true)
+        }
+    }
+}
 
 @main
 struct CMessageApp: App {
@@ -9,7 +28,13 @@ struct CMessageApp: App {
             ContentView()
                 .environmentObject(store)
                 .frame(minWidth: 760, minHeight: 480)
-                .onAppear { Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")") }
+                .onAppear {
+                    Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
+                    DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+                    WindowRescue.run()
+                }
         }
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {

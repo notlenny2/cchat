@@ -55,6 +55,9 @@ struct Conversation: Identifiable, Codable, Hashable {
     /// imported from NodeTerm: the terminal may still be using that session, so cMessage branches
     /// off a copy with the full memory rather than writing into the same one.
     var forkNext: [String]? = nil
+    /// Pinned chats sit in the big-avatar row at the top of the sidebar, like iMessage.
+    var pinned: Bool? = nil
+    var isPinned: Bool { pinned == true }
 
     var isGroup: Bool { participantIds.count > 1 }
     var lastDate: Date { messages.last?.date ?? .distantPast }

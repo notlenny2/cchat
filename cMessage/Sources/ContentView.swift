@@ -35,13 +35,16 @@ struct ContentView: View {
 
     private var sidebar: some View {
         List(selection: $store.selectedId) {
-            ForEach(filtered) { c in
+            let pinned = search.isEmpty ? store.pinnedConversations : []
+            if !pinned.isEmpty {
+                PinnedGrid(convs: pinned, selected: $store.selectedId)
+                    .listRowSeparator(.hidden)
+                    .selectionDisabled()
+            }
+            ForEach(filtered.filter { !search.isEmpty || !$0.isPinned }) { c in
                 ConversationRow(conv: c)
                     .tag(c.id)
-                    .contextMenu {
-                        Button("Hide Chat (keeps memory)") { store.hide(c.id) }
-                        Button("Delete Chat and Memory", role: .destructive) { store.deleteForever(c.id) }
-                    }
+                    .contextMenu { chatMenu(c) }
             }
         }
         .listStyle(.sidebar)
@@ -55,6 +58,13 @@ struct ContentView: View {
             }
         }
         .onChange(of: store.selectedId) { _, id in if let id { store.markRead(id) } }
+    }
+
+    @ViewBuilder private func chatMenu(_ c: Conversation) -> some View {
+        Button(c.isPinned ? "Unpin" : "Pin") { withAnimation { store.togglePin(c.id) } }
+        Divider()
+        Button("Hide Chat (keeps memory)") { store.hide(c.id) }
+        Button("Delete Chat and Memory", role: .destructive) { store.deleteForever(c.id) }
     }
 
     private var emptyState: some View {
@@ -88,16 +98,24 @@ struct ConversationRow: View {
                     Text(conv.messages.last.map { shortDate($0.date) } ?? "")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Text(preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                if store.typing[conv.id] != nil {
+                    HStack(spacing: 6) {
+                        TypingDots(dot: 5)
+                            .padding(.horizontal, 8).padding(.vertical, 6)
+                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                        if conv.isGroup, let c = store.contact(store.typing[conv.id]) {
+                            Text(c.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                } else {
+                    Text(preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                }
             }
         }
         .padding(.vertical, 4)
     }
 
     private var preview: String {
-        if let t = store.typing[conv.id], let c = store.contact(t) {
-            return conv.isGroup ? "\(c.name) is typing…" : "Typing…"
-        }
         guard let m = conv.messages.last(where: { $0.kind != .system }) ?? conv.messages.last else { return "No messages yet" }
         if conv.isGroup, let s = store.contact(m.senderId) { return "\(s.name): \(m.text)" }
         return m.text
@@ -110,4 +128,43 @@ func shortDate(_ d: Date) -> String {
     if cal.isDateInYesterday(d) { return "Yesterday" }
     if let days = cal.dateComponents([.day], from: d, to: Date()).day, days < 7 { return d.formatted(.dateTime.weekday(.wide)) }
     return d.formatted(date: .numeric, time: .omitted)
+}
+
+/// iMessage-style pinned row: big avatars, name underneath, typing dots bubble on top.
+struct PinnedGrid: View {
+    @EnvironmentObject var store: Store
+    let convs: [Conversation]
+    @Binding var selected: UUID?
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 12) {
+            ForEach(convs) { c in
+                Button { selected = c.id } label: {
+                    VStack(spacing: 4) {
+                        GroupAvatar(ids: c.participantIds, size: 58)
+                            .overlay(alignment: .topTrailing) {
+                                if store.typing[c.id] != nil {
+                                    TypingDots(dot: 4)
+                                        .padding(.horizontal, 6).padding(.vertical, 5)
+                                        .background(Capsule().fill(Color(nsColor: .controlBackgroundColor)).shadow(radius: 1))
+                                        .offset(x: 8, y: -4)
+                                } else if c.unread {
+                                    Circle().fill(Palette.blue).frame(width: 12, height: 12).offset(x: 2, y: 2)
+                                }
+                            }
+                            .overlay(Circle().stroke(selected == c.id ? Palette.blue : .clear, lineWidth: 2.5).padding(-3))
+                        Text(store.title(for: c)).font(.caption).lineLimit(1)
+                            .foregroundStyle(selected == c.id ? Palette.blue : .primary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("Unpin") { withAnimation { store.togglePin(c.id) } }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
 }

@@ -50,8 +50,16 @@ final class Store: ObservableObject {
     var projects: [Contact] { contacts.filter { !$0.isSubContact }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
     func subContacts(of id: UUID) -> [Contact] { contacts.filter { $0.parentId == id } }
 
+    /// Newest activity first. Pinned chats are pulled out into their own row.
     var visibleConversations: [Conversation] {
         conversations.filter { !$0.hidden }.sorted { $0.lastDate > $1.lastDate }
+    }
+    var pinnedConversations: [Conversation] { visibleConversations.filter(\.isPinned) }
+
+    func togglePin(_ convId: UUID) {
+        guard let i = index(of: convId) else { return }
+        conversations[i].pinned = conversations[i].isPinned ? nil : true
+        save()
     }
 
     func title(for c: Conversation) -> String {
@@ -183,6 +191,8 @@ final class Store: ObservableObject {
         for id in responders(for: text, in: conversations[i]) where !conversations[i].pending.contains(id) {
             conversations[i].pending.append(id)
         }
+        // Dots show up the instant you hit send, not when the agent process gets going.
+        if typing[convId] == nil, let first = conversations[i].pending.first { typing[convId] = first }
         save()
         pump(convId)
     }
