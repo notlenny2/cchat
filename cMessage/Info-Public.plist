@@ -22,7 +22,5 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>example</string>
 </dict>
 </plist>
