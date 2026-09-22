@@ -207,7 +207,11 @@ final class RemoteServer: ObservableObject {
         case .ask:
             guard let t = req.text, !t.isEmpty else { res.ok = false; res.error = "Nothing to send."; break }
             guard let convId = req.conv ?? req.to.flatMap(store.findChat) else {
-                res.ok = false; res.error = "No chat or contact called \"\(req.to ?? "")\"."; break
+                let near = store.closestNames(to: req.to ?? "")
+                res.ok = false
+                res.error = "No chat or contact called \"\(req.to ?? "")\"."
+                    + (near.isEmpty ? "" : " Did you mean: \(near.joined(separator: ", "))?")
+                break
             }
             let startCount = store.conversations.first { $0.id == convId }?.messages.count ?? 0
             store.send(t, in: convId, from: client)

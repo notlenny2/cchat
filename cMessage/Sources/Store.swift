@@ -383,7 +383,30 @@ final class Store: ObservableObject {
             defer { selectedId = before }
             return selectedId
         }
-        return visible.first(where: { title(for: $0).lowercased().contains(n) })?.id
+        if let c = visible.first(where: { title(for: $0).lowercased().contains(n) }) { return c.id }
+        // Loose match on a contact ("Website" -> "Website UX"), as long as only one fits.
+        let near = contacts.filter { displayName($0).lowercased().contains(n) || n.contains($0.name.lowercased()) }
+        guard near.count == 1, let c = near.first else { return nil }
+        if let conv = conversations.first(where: { $0.participantIds == [c.id] && !$0.usesCodex }) { return conv.id }
+        let before = selectedId
+        openChat(with: c)
+        defer { selectedId = before }
+        return selectedId
+    }
+
+    /// Names closest to what was asked for, so a wrong name comes back with a useful hint.
+    func closestNames(to raw: String, limit: Int = 3) -> [String] {
+        let n = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let words = Set(n.split(separator: " ").map(String.init))
+        let names = conversations.filter { !$0.hidden }.map { title(for: $0) } + contacts.map(displayName)
+        let scored = Set(names).map { name -> (String, Int) in
+            let ln = name.lowercased()
+            var score = 0
+            if ln.contains(n) || n.contains(ln) { score += 5 }
+            score += words.filter { ln.contains($0) }.count
+            return (name, score)
+        }
+        return scored.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
     }
 
     func send(_ raw: String, in convId: UUID, attachments: [String] = [], from: String? = nil) {
