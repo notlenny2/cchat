@@ -17,7 +17,7 @@ final class Store: ObservableObject {
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
     static let fileURL: URL = {
-        // CMESSAGE_DATA_DIR lets tests run against a throwaway copy instead of the user's real chats.
+        // CMESSAGE_DATA_DIR lets tests run against a throwaway copy instead of your real chats.
         let dir = ProcessInfo.processInfo.environment["CMESSAGE_DATA_DIR"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Flavor.dataFolder, isDirectory: true)
@@ -392,8 +392,8 @@ final class Store: ObservableObject {
 
     // MARK: Sending
 
-    /// Finds a chat by what the user would call it: a chat's title ("Garden", "example Tools") or a contact's
-    /// name ("Website UX", "Garden Main"). A contact with no chat yet gets one.
+    /// Finds a chat by what the user would call it: a chat's title ("Website", "Acme Tools") or a contact's
+    /// name ("Website UX", "Website Main"). A contact with no chat yet gets one.
     func findChat(named raw: String) -> UUID? {
         let n = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !n.isEmpty else { return nil }
@@ -407,7 +407,7 @@ final class Store: ObservableObject {
             return selectedId
         }
         if let c = visible.first(where: { title(for: $0).lowercased().contains(n) }) { return c.id }
-        // Loose match on a contact ("Website" -> "Website UX"), as long as only one fits.
+        // Loose match on a contact ("website" -> "Website UX"), as long as only one fits.
         let near = contacts.filter { displayName($0).lowercased().contains(n) || n.contains($0.name.lowercased()) }
         guard near.count == 1, let c = near.first else { return nil }
         if let conv = conversations.first(where: { $0.participantIds == [c.id] && !$0.usesCodex }) { return conv.id }
@@ -466,7 +466,7 @@ final class Store: ObservableObject {
         save()
     }
 
-    /// Agent replies since the user (or Helper, on his behalf) last said something.
+    /// Agent replies since the user (or an agent on their behalf) last said something.
     private func repliesSinceUser(_ conv: Conversation) -> Int {
         let lastMine = conv.messages.lastIndex { $0.senderId == nil && $0.kind == .normal } ?? -1
         return conv.messages[(lastMine + 1)...].filter { $0.senderId != nil && $0.kind == .normal }.count
@@ -785,7 +785,7 @@ final class Store: ObservableObject {
 
     private func systemPrompt(for agent: Contact, in conv: Conversation) -> String {
         let me = Prefs.userName
-        let otherAgent = Flavor.personal ? "another of \(me)'s agents (like Helper)" : "another of \(me)'s agents"
+        let otherAgent = "another of \(me)'s agents"
         var s = "You are \(displayName(agent)), texting with \(me) in cChat, a text-message style app."
         if !agent.role.isEmpty { s += "\nYour role: \(agent.role)" }
         s += "\nYou work in the project folder \(agent.projectPath). Read its CLAUDE.md for context when it matters."

@@ -157,7 +157,7 @@ struct ChatView: View {
 
     // MARK: Composer
 
-    /// Every member is a specialist of the same project, so "example Tools Mechanic" can just be "Mechanic".
+    /// Every member is a specialist of the same project, so "Website Mechanic" can just be "Mechanic".
     private func sameProject(_ conv: Conversation) -> Bool {
         let parents = Set(conv.participantIds.map { store.contact($0)?.parentId })
         return conv.isGroup && parents.count == 1 && parents.first! != nil

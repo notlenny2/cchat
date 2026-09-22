@@ -204,7 +204,7 @@ enum ClaudeRunner {
             }
         }
         // Codex leaves some models out of its own list even for accounts that can use them (GPT-6 Astra,
-        // 2026-09: missing from models_cache.json yet `codex exec -m gpt-6-astra` works on the user's plan).
+        // 2026-09: missing from models_cache.json yet `codex exec -m gpt-6-astra` works on the author's plan).
         for extra in codexHidden where !out.contains(where: { $0.id == extra.id }) { out.insert(extra, at: 1) }
         return out
     }

@@ -2,3 +2,7 @@ build/
 build-*/
 *.xcodeproj/
 .DS_Store
+# The author's personal build and working notes stay on his Mac.
+personal.yml
+Personal/
+CLAUDE.md

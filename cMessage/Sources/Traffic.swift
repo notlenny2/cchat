@@ -2,12 +2,12 @@ import Foundation
 
 /// Air traffic control for project folders.
 ///
-/// Several chats can point at the same folder (a project and its specialists, a group, the user's build and
+/// Several chats can point at the same folder (a project and its specialists, a group, a personal build and
 /// the public one, two windows). Letting them run at once means two agents editing the same files,
 /// two builds fighting over the same build folder, and commits sweeping up each other's half-done work.
 /// So a folder is held by ONE turn at a time; everyone else waits their turn, in order.
 ///
-/// The queue is in-app; a small lock file in cChat's own folder (never inside the user's projects) makes it
+/// The queue is in-app; a small lock file in cChat's own folder (never inside your projects) makes it
 /// hold across BOTH builds of cChat and survive a crash: a lock whose process is gone, or older than
 /// the ceiling, is ignored.
 @MainActor

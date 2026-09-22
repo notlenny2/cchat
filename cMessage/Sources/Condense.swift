@@ -2,7 +2,7 @@ import Foundation
 
 /// Keeps agents' memory from growing forever. A chat's memory is a Claude Code session, and every step an
 /// agent takes re-reads all of it; on 2026-09-22 a few chats carrying 600k-900k tokens each used over 80% of
-/// the user's Claude allowance. After a turn, if the session has grown past a sensible size, cChat asks Claude Code to
+/// your Claude allowance. After a turn, if the session has grown past a sensible size, cChat asks Claude Code to
 /// condense it (its own `/compact`): same session, same memory of what matters, a fraction of the size.
 /// Works per agent per chat, so every member of a group chat is condensed on its own.
 enum Condense {

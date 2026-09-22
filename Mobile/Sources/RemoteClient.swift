@@ -229,7 +229,8 @@ final class RemoteClient: ObservableObject {
 
 /// The pairing key lives in the iOS Keychain, only readable while the device is unlocked, never synced.
 enum Keychain {
-    private static let service = "com.example.cmessage.pairing"
+    /// "<mac app id>.pairing" (the phone's id minus ".mobile"), so it matches what earlier builds saved.
+    private static let service = (Bundle.main.bundleIdentifier ?? "cchat").replacingOccurrences(of: ".mobile", with: "") + ".pairing"
 
     static func save(_ p: PairingInfo) {
         guard let data = try? JSONEncoder().encode(p) else { return }

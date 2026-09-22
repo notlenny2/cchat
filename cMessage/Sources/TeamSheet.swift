@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Call in the team": pick which of the user's seven personas to pull onto a project. Each gets its own chat
+/// "Call in the team": pick which of the seven personas to pull onto a project. Each gets its own chat
 /// (an existing one is reused, never duplicated), and optionally they all go in one group too.
 struct TeamSheet: View {
     @EnvironmentObject var store: Store

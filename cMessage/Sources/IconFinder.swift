@@ -37,7 +37,7 @@ enum IconFinder {
             if penalized.contains(where: { rel.contains($0) }) { score -= 20 }
             if rel.contains("ios") { score += 3 }
             // A project with a personal and a public icon (cChat itself) should wear the one that
-            // matches this build: blue in the user's, orange in the public one.
+            // matches this build: blue in a personal build, orange in the public one.
             #if CCHAT_PERSONAL
             if rel.contains("personal") { score += 8 }
             #else

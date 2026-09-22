@@ -24,7 +24,7 @@ enum Clay {
         #endif
     }
 
-    // Public release = warm orange-and-white clay. the user's own build (CCHAT_PERSONAL) = the same clay in ice blue,
+    // Public release = warm orange-and-white clay. a personal build (CCHAT_PERSONAL) = the same clay in ice blue,
     // so the two are never confused on one Mac. The names stay the warm ones; `terracotta` is just "the accent".
     #if CCHAT_PERSONAL
     static let canvas     = dyn((0.929, 0.957, 0.980), (0.086, 0.114, 0.149))   // frosted table

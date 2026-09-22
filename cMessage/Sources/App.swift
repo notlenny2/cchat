@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// macOS restores the window wherever it was last, which on the user's desk can be an AirPlay screen
-/// ("Studio") or a monitor that isn't there any more. At launch, always open on the primary display
+/// macOS restores the window wherever it was last, which can be an AirPlay screen
+/// or a monitor that isn't there any more. At launch, always open on the primary display
 /// (the one with the menu bar); later, only step in if the window ends up on no screen at all.
 enum WindowRescue {
     static func run(atLaunch: Bool = false) {
@@ -33,7 +33,7 @@ struct CMessageApp: App {
                 .onAppear {
                     Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
-                    // The phone link and self-install are the user's: there's no public iPhone app to link, and
+                    // The phone link and self-install are personal-build only: there's no public iPhone app to link, and
                     // self-install rebuilds from his own source folder.
                     if Flavor.personal {
                         RemoteServer.shared.attach(store)

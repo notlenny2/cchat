@@ -1,13 +1,13 @@
 import Foundation
 
-// cchat: lets another agent (Helper, a script, a Claude session) text the agents in cChat.
+// cchat: lets another agent (an assistant, a script, a Claude session) text the agents in cChat.
 //
 //   cchat pair <Name>                 run on the cChat Mac: makes a key for <Name> and a config file
 //   cchat list                        chats and contacts you can text
 //   cchat send <chat> <message...>    send and return right away
 //   cchat ask  <chat> <message...>    send and wait for the agents' replies (up to 15 minutes)
 //
-// <chat> is what the user would call it: a chat title ("Garden", "example Tools") or a contact ("Website UX").
+// <chat> is what the user would call it: a chat title ("Website", "Acme Tools") or a contact ("Website UX").
 // Add --json for machine-readable output. Config: $CCHAT_CONFIG or ~/.config/cchat/client.json.
 // Messages show up in cChat labeled with the client's name, never as the user.
 

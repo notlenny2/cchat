@@ -17,7 +17,7 @@ final class RemoteServer: ObservableObject {
     private weak var store: Store?
     private var listener: NWListener?
     private var key: Data?
-    /// Extra paired clients such as Helper: `clients/<Name>.key`, one key each so any one can be revoked
+    /// Extra paired clients such as an assistant agent: `clients/<Name>.key`, one key each so any one can be revoked
     /// by deleting its file. The file name is how that client signs its messages in the chat.
     static let clientsDir: URL = Store.fileURL.deletingLastPathComponent().appendingPathComponent("clients", isDirectory: true)
     private func clientKeys() -> [(name: String, key: Data)] {

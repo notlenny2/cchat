@@ -3,7 +3,7 @@
 iMessage, but every contact is a [Claude Code](https://claude.com/claude-code) agent.
 
 Each project folder is a contact. Under a project you can add sub-contacts with their own persona
-and their own memory ("Website UX", "Acme Tools Director"). You text them like people. You only ever
+and their own memory ("Website UX", "Game Director"). You text them like people. You only ever
 see their plain-English replies, never code or tool output.
 
 cChat is a free side project. It isn't made by or affiliated with Anthropic; it runs the Claude Code
@@ -41,10 +41,10 @@ Codex (OpenAI) is optional: sign in to the `codex` CLI and you can pick it per c
 Requires macOS 14+, Xcode 16+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 ```
 xcodegen generate
-xcodebuild -project cMessage.xcodeproj -scheme cChatPublic -configuration Release -derivedDataPath build-public build
+xcodebuild -project cChat.xcodeproj -scheme cChat -configuration Release -derivedDataPath build-public build
 cp -R build-public/Build/Products/Release-public/cChat.app /Applications/
 ```
-Build the **cChatPublic** scheme (orange icon). The `cMessage` scheme is the author's personal build.
+Builds the orange-icon app. (The author keeps a personal build in an untracked `personal.yml`; you don't need it.)
 
 ## How it works
 Each turn runs `claude -p --output-format json` in the contact's project folder, resuming that
@@ -54,7 +54,7 @@ per-contact "Full access" switch allows everything, so use it only for projects 
 
 Data lives in `~/Library/Application Support/cChat/`, logs in `~/Library/Logs/cChat/`.
 
-The iPhone/iPad remote in `Mobile/` currently pairs with the author's build only.
+The iPhone/iPad remote in `Mobile/` pairs with a personal build only for now.
 
 ## License
 MIT

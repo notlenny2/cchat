@@ -6,8 +6,13 @@ import AppKit
 /// restarted the app on top of a reply.
 @MainActor
 enum SelfUpdate {
-    static let buildURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("projects/cchat/build/Build/Products/Release/cChat.app")
+    /// The personal build installs itself from this repo's own build folder, wherever the repo lives.
+    #if CCHAT_PERSONAL
+    static let buildURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appendingPathComponent("build/Build/Products/Release/cChat.app")
+    #else
+    static let buildURL = URL(fileURLWithPath: "/nonexistent")
+    #endif
     private static var quietSince: Date?
     private static var timer: Timer?
 

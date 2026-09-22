@@ -38,7 +38,7 @@ struct Message: Identifiable, Codable, Hashable {
     var kind: Kind = .normal
     /// Pictures the user dragged in, stored as files in cMessage's own attachments folder.
     var attachments: [String]? = nil
-    /// Set when another agent (like Helper) sent this on the user's behalf, not the user himself. senderId is nil.
+    /// Set when another agent sent this on the user's behalf, not the user. senderId is nil.
     var from: String? = nil
     var isFromUser: Bool { senderId == nil && from == nil }
 }
@@ -120,7 +120,7 @@ struct StoreData: Codable {
     var conversations: [Conversation] = []
 }
 
-/// The planning team from the user's global instructions, offered as one-tap sub-contact presets.
+/// The planning team from the author's planning personas, offered as one-tap sub-contact presets.
 enum TeamPreset: String, CaseIterable, Identifiable {
     case director, designer, optimizer, engineer, salesman, marketer, futurist
     var id: String { rawValue }

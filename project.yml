@@ -1,6 +1,5 @@
-name: cMessage
+name: cChat
 options:
-  bundleIdPrefix: com.example
   deploymentTarget:
     macOS: "14.0"
 settings:
@@ -9,36 +8,9 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:
-  cMessage:
-    type: application
-    platform: macOS
-    sources:
-      - Shared
-      - cMessage/Sources
-      - cMessage/Resources
-    info:
-      path: cMessage/Info.plist
-      properties:
-        CFBundleDisplayName: cChat
-        CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        LSApplicationCategoryType: public.app-category.productivity
-        NSHumanReadableCopyright: "example"
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage
-        PRODUCT_NAME: cChat
-        # The app launches the local `claude` CLI, so it cannot run inside the App Sandbox.
-        ENABLE_APP_SANDBOX: NO
-        CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: "-"
-        ENABLE_HARDENED_RUNTIME: NO
-        # the user's own build: ice blue look and icon. The public release (cChatPublic) is orange and white.
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) CCHAT_PERSONAL"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconPersonal
-  # The public release anyone can download: warm orange-and-white clay, its own bundle id. Built into
-  # Release-public so it never lands at build/Build/Products/Release/cChat.app, which the user's app installs from.
-  cChatPublic:
+  # cChat for Mac. Built into Release-public so it never collides with a personal build (see personal.yml,
+  # which is optional and not part of this repo).
+  cChat:
     type: application
     platform: macOS
     sources:
@@ -54,58 +26,12 @@ targets:
         LSApplicationCategoryType: public.app-category.productivity
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.cchat
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.notlenny2.cchat
         PRODUCT_NAME: cChat
         CONFIGURATION_BUILD_DIR: "$(BUILD_DIR)/$(CONFIGURATION)-public"
+        # The app launches the local `claude` CLI, so it cannot run inside the App Sandbox.
         ENABLE_APP_SANDBOX: NO
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-  cMessageMobile:
-    type: application
-    platform: iOS
-    deploymentTarget: "17.0"
-    sources:
-      - Shared
-      - Mobile/Sources
-      - Mobile/Resources
-    info:
-      path: Mobile/Info.plist
-      properties:
-        CFBundleDisplayName: cChat
-        CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        UILaunchScreen: {}
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        NSCameraUsageDescription: "Scan the code on your Mac to link cMessage."
-        NSLocalNetworkUsageDescription: "cMessage talks to your Mac on your Wi-Fi, where your agents run."
-        NSBonjourServices: ["_cmessage._tcp"]
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
-        ITSAppUsesNonExemptEncryption: false
-        CFBundleURLTypes:
-          - CFBundleURLName: com.example.cmessage.pair
-            CFBundleURLSchemes: [cmessage]
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage.mobile
-        PRODUCT_NAME: cChat
-        TARGETED_DEVICE_FAMILY: "1,2"
-        DEVELOPMENT_TEAM: XXXXXXXXXX
-        CODE_SIGN_STYLE: Automatic
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) CCHAT_PERSONAL"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconPersonal
-  cchat:
-    type: tool
-    platform: macOS
-    sources:
-      - Shared
-      - Cli
-    settings:
-      base:
-        PRODUCT_NAME: cchat
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage.cli
-        CODE_SIGN_IDENTITY: "-"
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) CCHAT_PERSONAL"

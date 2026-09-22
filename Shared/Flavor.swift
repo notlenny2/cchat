@@ -1,8 +1,8 @@
 import Foundation
 
-/// Which cChat this is. the user's own build (CCHAT_PERSONAL) keeps his data folder, name and ~/projects exactly
-/// as they always were. The public release keeps its own data folder and asks each person for their name
-/// and projects folder the first time it opens.
+/// Which cChat this is. A personal build (CCHAT_PERSONAL, defined only in a local personal.yml) keeps the
+/// original "cMessage" data folder and skips the welcome screen. The normal build uses its own data folder and
+/// asks each person for their name and projects folder the first time it opens.
 enum Flavor {
     #if CCHAT_PERSONAL
     static let personal = true
@@ -22,7 +22,6 @@ enum Prefs {
     static var userName: String {
         get {
             if let n = d.string(forKey: "userName")?.trimmingCharacters(in: .whitespaces), !n.isEmpty { return n }
-            if Flavor.personal { return "the user" }
             #if os(macOS)
             if let first = NSFullUserName().split(separator: " ").first { return String(first) }
             #endif
@@ -57,7 +56,7 @@ enum Prefs {
         return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
     }
 
-    /// The welcome screen has been finished. the user's build never shows it.
+    /// The welcome screen has been finished. A personal build never shows it.
     static var setupDone: Bool {
         get { Flavor.personal || d.bool(forKey: "setupDone") }
         set { d.set(newValue, forKey: "setupDone") }

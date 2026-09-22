@@ -91,7 +91,7 @@ struct RPCRequest: Codable {
     var since: Int? = nil
     var model: String? = nil
     var engine: Engine? = nil
-    /// `ask`: which chat, by name ("Garden", "example Tools", "Website UX") when `conv` isn't known.
+    /// `ask`: which chat, by name ("Website", "Acme Tools", "Website UX") when `conv` isn't known.
     var to: String? = nil
     /// `ask`: wait for the agents to answer and return what they said.
     var wait: Bool? = nil
