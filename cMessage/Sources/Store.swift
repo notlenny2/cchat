@@ -412,7 +412,8 @@ final class Store: ObservableObject {
         return scored.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
     }
 
-    func send(_ raw: String, in convId: UUID, attachments: [String] = [], from: String? = nil) {
+    /// `everyone`: every member of a group answers (Director last), no router. Used when the team is called in.
+    func send(_ raw: String, in convId: UUID, attachments: [String] = [], from: String? = nil, everyone: Bool = false) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, let i = index(of: convId) else { return }
         var m = Message(senderId: nil, text: text, attachments: attachments.isEmpty ? nil : attachments)
@@ -420,7 +421,10 @@ final class Store: ObservableObject {
         conversations[i].messages.append(m)
         if from != nil && selectedId != convId { conversations[i].unread = true }
         conversations[i].suggestions = []
-        if let named = namedResponders(for: text, in: conversations[i]) {
+        if everyone {
+            let all = directorsLast(conversations[i].participantIds.compactMap { contact($0) })
+            for id in all where !conversations[i].pending.contains(id) { conversations[i].pending.append(id) }
+        } else if let named = namedResponders(for: text, in: conversations[i]) {
             for id in named where !conversations[i].pending.contains(id) { conversations[i].pending.append(id) }
         } else {
             conversations[i].routeNext = true
@@ -817,6 +821,40 @@ final class Store: ObservableObject {
             body = (body as NSString).replacingCharacters(in: m.range, with: "")
         }
         return (body.trimmingCharacters(in: .whitespacesAndNewlines), Array(opens.prefix(2)))
+    }
+
+    /// Calls the team in on a project: a chat with each member picked (reusing any that already exist),
+    /// and optionally one group chat with all of them. Each can be handed the same opening line.
+    @discardableResult
+    func callInTeam(on project: Contact, members: [TeamPreset], asGroup: Bool, opener: String,
+                    engine: Engine = .claude, model: String? = nil) -> UUID? {
+        guard !members.isEmpty, !project.isSubContact else { return nil }
+        let existing = subContacts(of: project.id)
+        let people: [Contact] = members.map { preset in
+            existing.first { $0.name.caseInsensitiveCompare(preset.name) == .orderedSame }
+                ?? addSubContact(to: project, name: preset.name, role: preset.role)
+        }
+        let note = opener.trimmingCharacters(in: .whitespacesAndNewlines)
+        let group = asGroup && people.count > 1
+        var chats: [UUID] = []
+        // With a group, the opener goes only to the group, where everyone answers it once (Director last).
+        // Sending it to every 1:1 as well meant each persona answered twice (8 full turns for the whole team).
+        for person in people {
+            openChat(with: person, engine: engine, model: model)
+            guard let id = selectedId else { continue }
+            chats.append(id)
+            if !note.isEmpty && !group { send(note, in: id) }
+        }
+        if group {
+            openGroup(people.map(\.id), title: "\(project.name) Team", engine: engine, model: model)
+            if let id = selectedId {
+                chats.append(id)
+                if !note.isEmpty { send(note, in: id, everyone: true) }
+            }
+        }
+        Log.info("called in \(people.count) team members on \(project.name)\(asGroup ? " + a group" : "")")
+        selectedId = chats.last
+        return selectedId
     }
 
     /// Starts (or reopens) a chat with a specialist under the SAME project as the agent that asked,

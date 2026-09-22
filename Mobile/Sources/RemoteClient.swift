@@ -120,6 +120,10 @@ final class RemoteClient: ObservableObject {
         return url
     }
 
+    func callInTeam(_ project: UUID, members: [String], asGroup: Bool, opener: String, engine: Engine, model: String) async -> UUID? {
+        try? await call(RPCRequest(op: .team, contact: project, text: opener, model: model, engine: engine, wait: asGroup, names: members)).convId
+    }
+
     func setChatter(_ conv: UUID, on: Bool) { fire(RPCRequest(op: .chatter, conv: conv, wait: on)) }
 
     func setModel(_ conv: UUID, _ model: String) { fire(RPCRequest(op: .setModel, conv: conv, model: model)) }

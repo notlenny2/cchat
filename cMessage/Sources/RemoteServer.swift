@@ -254,6 +254,14 @@ final class RemoteServer: ObservableObject {
                 res.convId = store.selectedId
                 store.selectedId = before
             } else { res.ok = false; res.error = "Couldn't make that project." }
+        case .team:
+            let members = TeamPreset.allCases.filter { t in (req.names ?? []).contains { $0.caseInsensitiveCompare(t.name) == .orderedSame } }
+            if let id = req.contact, let p = store.contact(id), !p.isSubContact, !members.isEmpty {
+                let before = store.selectedId
+                res.convId = store.callInTeam(on: p, members: members, asGroup: req.wait ?? true,
+                                              opener: req.text ?? "", engine: req.engine ?? .claude, model: req.model)
+                store.selectedId = before
+            } else { res.ok = false; res.error = "Pick a project and at least one team member." }
         case .chatter:
             if let c = req.conv { store.setChatter(c, on: req.wait ?? true) } else { res.ok = false }
         case .setModel:

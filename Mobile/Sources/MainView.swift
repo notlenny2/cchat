@@ -174,6 +174,7 @@ struct NewChatSheet: View {
     @State private var engine: Engine = .claude
     @State private var model = ""
     @State private var newProject = ""
+    @State private var teamFor: RemoteContact?
 
     var body: some View {
         NavigationStack {
@@ -202,7 +203,14 @@ struct NewChatSheet: View {
                 }
                 let all = client.snapshot?.contacts ?? []
                 ForEach(all.filter { $0.parentId == nil }.sorted { $0.name < $1.name }) { p in
-                    Section(p.name) {
+                    Section {
+                        Button {
+                            teamFor = p
+                        } label: {
+                            Label("Call in the team", systemImage: "person.3.fill").font(.caption)
+                        }
+                    } header: { Text(p.name) }
+                    Section {
                         ForEach([p] + all.filter { $0.parentId == p.id }) { c in
                             Button {
                                 Task {
@@ -215,6 +223,9 @@ struct NewChatSheet: View {
                         }
                     }
                 }
+            }
+            .sheet(item: $teamFor) { p in
+                TeamSheet(project: p) { id in opened(id); dismiss() }.environmentObject(client)
             }
             .navigationTitle("New Message")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }

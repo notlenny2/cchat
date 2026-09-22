@@ -175,6 +175,7 @@ struct ContactEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State var contact: Contact
     @State private var confirmDelete = false
+    @State private var callTeam = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -227,6 +228,9 @@ struct ContactEditor: View {
             }
             .formStyle(.grouped)
             HStack {
+                if !contact.isSubContact {
+                    Button("Call in the Team…") { callTeam = true }
+                }
                 Button("Forget Memory") { store.forget(contact); dismiss() }
                     .help("Starts every chat with this contact fresh")
                 Button("Delete", role: .destructive) { confirmDelete = true }
@@ -241,6 +245,7 @@ struct ContactEditor: View {
         .frame(width: 480)
         .background(Clay.canvas)
         .foregroundStyle(Clay.ink)
+        .sheet(isPresented: $callTeam) { TeamSheet(project: contact).environmentObject(store) }
         .confirmationDialog("Delete \(contact.name)?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) { store.delete(contact); dismiss() }
         } message: {

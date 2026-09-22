@@ -35,14 +35,24 @@ enum Prefs {
     static var projectsRoot: URL {
         get {
             if let p = d.string(forKey: "projectsRoot"), !p.isEmpty { return URL(fileURLWithPath: p, isDirectory: true) }
-            return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("projects", isDirectory: true)
+            return Self.home.appendingPathComponent("projects", isDirectory: true)
         }
         set { d.set(newValue.path, forKey: "projectsRoot") }
     }
 
+    /// The Mac's home folder. On iPhone/iPad there are no project folders at all (the Mac holds them),
+    /// so this is only ever a placeholder there.
+    static var home: URL {
+        #if os(macOS)
+        return FileManager.default.homeDirectoryForCurrentUser
+        #else
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        #endif
+    }
+
     /// The projects folder the way a person would say it: "~/projects".
     static var projectsRootShort: String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = Self.home.path
         let p = projectsRoot.path
         return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
     }
