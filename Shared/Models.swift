@@ -134,3 +134,34 @@ enum TeamPreset: String, CaseIterable, Identifiable {
         }
     }
 }
+
+extension Array where Element == Message {
+    /// A run of "X joined the group." notes shows as one line ("A, B and 3 others joined the group.").
+    /// Display only: the stored chat keeps every note.
+    var squishedJoins: [Message] {
+        let tail = " joined the group."
+        var out: [Message] = []
+        var names: [String] = []
+        var first: Message?
+        func flush() {
+            guard var m = first else { return }
+            switch names.count {
+            case 1: m.text = "\(names[0])\(tail)"
+            case 2: m.text = "\(names[0]) and \(names[1])\(tail)"
+            case 3: m.text = "\(names[0]), \(names[1]) and \(names[2])\(tail)"
+            default: m.text = "\(names[0]), \(names[1]) and \(names.count - 2) others\(tail)"
+            }
+            out.append(m); names = []; first = nil
+        }
+        for m in self {
+            if m.kind == .system, m.text.hasSuffix(tail) {
+                if first == nil { first = m }
+                names.append(String(m.text.dropLast(tail.count)))
+            } else {
+                flush(); out.append(m)
+            }
+        }
+        flush()
+        return out
+    }
+}

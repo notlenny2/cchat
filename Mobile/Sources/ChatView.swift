@@ -55,9 +55,10 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    ForEach(Array(conv.messages.enumerated()), id: \.element.id) { idx, m in
-                        let prev = idx > 0 ? conv.messages[idx - 1] : nil
-                        let next = idx + 1 < conv.messages.count ? conv.messages[idx + 1] : nil
+                    let shown = conv.messages.squishedJoins
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { idx, m in
+                        let prev = idx > 0 ? shown[idx - 1] : nil
+                        let next = idx + 1 < shown.count ? shown[idx + 1] : nil
                         if prev == nil || m.date.timeIntervalSince(prev!.date) > 15 * 60 {
                             Text(m.date.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption2).foregroundStyle(.secondary).padding(.top, 12).padding(.bottom, 4)
