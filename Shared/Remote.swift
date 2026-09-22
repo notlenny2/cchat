@@ -131,6 +131,15 @@ extension Conversation {
         c.forkNext = nil
         c.pending = []
         c.routeNext = nil
+        c.photoPath = nil
+        c.messages = c.messages.map { m in
+            var m = m
+            if let a = m.attachments, !a.isEmpty {
+                m.text = ([String](repeating: "📷", count: a.count).joined() + " " + m.text).trimmingCharacters(in: .whitespaces)
+                m.attachments = nil
+            }
+            return m
+        }
         return c
     }
 }

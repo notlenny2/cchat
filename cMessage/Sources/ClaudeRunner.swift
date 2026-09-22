@@ -49,7 +49,7 @@ enum ClaudeRunner {
     }
 
     static func run(prompt: String, cwd: String, sessionId: String?, systemPrompt: String,
-                    model: String, fullAccess: Bool, fork: Bool = false) async throws -> ClaudeResult {
+                    model: String, fullAccess: Bool, fork: Bool = false, extraDirs: [String] = []) async throws -> ClaudeResult {
         guard let claude = claudePath else { throw RunnerError.claudeNotFound }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
@@ -61,6 +61,8 @@ enum ClaudeRunner {
                     "--permission-mode", fullAccess ? "bypassPermissions" : "acceptEdits"]
         if let sessionId { args += ["--resume", sessionId] + (fork ? ["--fork-session"] : []) }
         if !model.isEmpty { args += ["--model", model] }
+        // Lets the agent open pictures the user dragged in, which live outside the project folder.
+        for d in extraDirs { args += ["--add-dir", d] }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: claude)

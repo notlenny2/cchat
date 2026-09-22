@@ -36,12 +36,16 @@ struct Message: Identifiable, Codable, Hashable {
     var text: String
     var date = Date()
     var kind: Kind = .normal
+    /// Pictures the user dragged in, stored as files in cMessage's own attachments folder.
+    var attachments: [String]? = nil
 }
 
 struct Conversation: Identifiable, Codable, Hashable {
     var id = UUID()
     var participantIds: [UUID]
     var title: String? = nil
+    /// Group photo the user dragged onto the chat header (copied into cMessage's photos folder).
+    var photoPath: String? = nil
     var messages: [Message] = []
     /// contactId.uuidString -> Claude session id. Each chat keeps its own sessions, so a group
     /// chat never leaks into that agent's 1:1 thread and vice versa.

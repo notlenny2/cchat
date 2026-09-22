@@ -167,6 +167,12 @@ struct ContactEditor: View {
     var body: some View {
         VStack(spacing: 14) {
             Avatar(contact: contact, size: 64)
+                .dropDestination(for: URL.self) { urls, _ in
+                    guard let u = urls.first, let p = Store.importImage(u, into: Store.photosDir) else { return false }
+                    contact.iconPath = p; contact.iconSearched = true
+                    return true
+                }
+                .help("Drop a picture here")
             HStack(spacing: 12) {
                 Button("Choose Picture…", action: pickPicture).buttonStyle(.link)
                 if contact.iconPath != nil {

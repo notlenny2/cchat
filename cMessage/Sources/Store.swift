@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 @MainActor
 final class Store: ObservableObject {
@@ -22,7 +23,53 @@ final class Store: ObservableObject {
         return dir.appendingPathComponent("store.json")
     }()
 
-    init() { load(); findMissingIcons() }
+    init() { load(); flagUnanswered(); findMissingIcons() }
+
+    static var photosDir: URL { folder("photos") }
+    static var attachmentsDir: URL { folder("attachments") }
+    private static func folder(_ name: String) -> URL {
+        let d = fileURL.deletingLastPathComponent().appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    /// Copies a dropped picture into cMessage's own folder so it survives the original moving.
+    /// Converts anything NSImage can read (HEIC, JPEG, TIFF...) to PNG.
+    static func importImage(_ src: URL, into dir: URL) -> String? {
+        guard let img = NSImage(contentsOf: src), let tiff = img.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+            Log.error("image import failed: \(src.lastPathComponent)")
+            return nil
+        }
+        let dest = dir.appendingPathComponent("\(UUID().uuidString).png")
+        do { try png.write(to: dest); return dest.path } catch { Log.error("image save failed: \(error)"); return nil }
+    }
+
+    func setContactPhoto(_ contactId: UUID, from url: URL) {
+        guard let i = contacts.firstIndex(where: { $0.id == contactId }),
+              let path = Store.importImage(url, into: Store.photosDir) else { return }
+        contacts[i].iconPath = path
+        contacts[i].iconSearched = true
+        save()
+    }
+
+    func setGroupPhoto(_ convId: UUID, from url: URL) {
+        guard let i = index(of: convId), let path = Store.importImage(url, into: Store.photosDir) else { return }
+        conversations[i].photoPath = path
+        save()
+    }
+
+    /// If the app was restarted mid-reply, say so and offer a one-tap way to pick back up.
+    private func flagUnanswered() {
+        for i in conversations.indices {
+            guard let last = conversations[i].messages.last(where: { $0.kind != .system }),
+                  last.senderId == nil, last.kind == .normal,
+                  Date().timeIntervalSince(last.date) < 6 * 3600,
+                  conversations[i].messages.last?.kind != .system else { continue }
+            conversations[i].messages.append(Message(senderId: nil, text: "cMessage restarted before this got an answer.", kind: .system))
+            conversations[i].suggestions = ["Keep going where you left off"]
+        }
+    }
 
     // MARK: Persistence
 
@@ -240,10 +287,10 @@ final class Store: ObservableObject {
 
     // MARK: Sending
 
-    func send(_ raw: String, in convId: UUID) {
+    func send(_ raw: String, in convId: UUID, attachments: [String] = []) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let i = index(of: convId) else { return }
-        conversations[i].messages.append(Message(senderId: nil, text: text))
+        guard !text.isEmpty || !attachments.isEmpty, let i = index(of: convId) else { return }
+        conversations[i].messages.append(Message(senderId: nil, text: text, attachments: attachments.isEmpty ? nil : attachments))
         conversations[i].suggestions = []
         if let named = namedResponders(for: text, in: conversations[i]) {
             for id in named where !conversations[i].pending.contains(id) { conversations[i].pending.append(id) }
@@ -371,14 +418,19 @@ final class Store: ObservableObject {
         guard !fresh.isEmpty else { return }
         let endIndex = conv.messages.count
 
+        func body(_ m: Message) -> String {
+            guard let a = m.attachments, !a.isEmpty else { return m.text }
+            let pics = a.map { "[the user attached a picture. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
+            return m.text.isEmpty ? pics : "\(m.text)\n\(pics)"
+        }
         let prompt: String
         if conv.isGroup {
             prompt = fresh.map { m in
                 let who = m.senderId.flatMap { contact($0) }.map(displayName) ?? "the user"
-                return "\(who): \(m.text)"
+                return "\(who): \(body(m))"
             }.joined(separator: "\n\n")
         } else {
-            prompt = fresh.map(\.text).joined(separator: "\n\n")
+            prompt = fresh.map(body).joined(separator: "\n\n")
         }
 
         typing[convId] = agentId
@@ -389,14 +441,14 @@ final class Store: ObservableObject {
             do {
                 result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                    systemPrompt: systemPrompt(for: agent, in: conv),
-                                                   model: agent.model, fullAccess: agent.fullAccess, fork: fork)
+                                                   model: agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path])
                 // A resume can fail if the old session was cleaned up. Start fresh once rather than dying.
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("conversation") {
                     Log.info("resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
                                                        systemPrompt: systemPrompt(for: agent, in: conv),
-                                                       model: agent.model, fullAccess: agent.fullAccess)
+                                                       model: agent.model, fullAccess: agent.fullAccess, extraDirs: [Store.attachmentsDir.path])
                 }
             }
             guard let j = index(of: convId) else { return }

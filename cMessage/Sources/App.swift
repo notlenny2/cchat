@@ -118,9 +118,13 @@ struct GroupAvatar: View {
     @EnvironmentObject var store: Store
     let ids: [UUID]
     var size: CGFloat = 40
+    var photo: String? = nil
 
     var body: some View {
-        if ids.count <= 1 {
+        if let img = IconCache.image(photo) {
+            Image(nsImage: img).resizable().interpolation(.high).scaledToFill()
+                .frame(width: size, height: size).clipShape(Circle())
+        } else if ids.count <= 1 {
             Avatar(contact: store.contact(ids.first), size: size)
         } else {
             ZStack {

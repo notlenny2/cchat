@@ -5,6 +5,9 @@ struct ChatView: View {
     let convId: UUID
     @State private var draft = ""
     @State private var showInfo = false
+    @State private var attached: [String] = []
+    @State private var dropping = false
+    @State private var photoDrop = false
     @FocusState private var focused: Bool
 
     private var conv: Conversation? { store.index(of: convId).map { store.conversations[$0] } }
@@ -17,6 +20,21 @@ struct ChatView: View {
                 transcript(conv)
                 composer(conv)
             }
+            .overlay {
+                if dropping {
+                    RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.blue, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                        .background(Palette.blue.opacity(0.06))
+                        .overlay(Label("Drop to send to \(store.title(for: conv))", systemImage: "photo").font(.title3).padding(12)
+                                    .background(.regularMaterial, in: Capsule()))
+                        .padding(8).allowsHitTesting(false)
+                }
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                let added = urls.compactMap { Store.importImage($0, into: Store.attachmentsDir) }
+                attached += added
+                focused = true
+                return !added.isEmpty
+            } isTargeted: { dropping = $0 }
             .background(Color(nsColor: .textBackgroundColor))
             .sheet(isPresented: $showInfo) { InfoSheet(convId: convId).environmentObject(store) }
             .onAppear { focused = true; store.markRead(convId) }
@@ -30,7 +48,15 @@ struct ChatView: View {
             Spacer()
             Button { showInfo = true } label: {
                 VStack(spacing: 3) {
-                    GroupAvatar(ids: conv.participantIds, size: 44)
+                    GroupAvatar(ids: conv.participantIds, size: 44, photo: conv.photoPath)
+                        .overlay(Circle().stroke(Palette.blue, lineWidth: photoDrop ? 3 : 0).padding(-3))
+                        .dropDestination(for: URL.self) { urls, _ in
+                            guard let u = urls.first else { return false }
+                            if conv.isGroup { store.setGroupPhoto(convId, from: u) }
+                            else if let c = conv.participantIds.first { store.setContactPhoto(c, from: u) }
+                            return true
+                        } isTargeted: { photoDrop = $0 }
+                        .help("Drop a picture here to make it the photo")
                     HStack(spacing: 2) {
                         Text(store.title(for: conv)).font(.caption.weight(.medium)).foregroundStyle(.primary)
                         Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
@@ -124,8 +150,26 @@ struct ChatView: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if !attached.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(attached, id: \.self) { p in
+                            if let img = IconCache.image(p) {
+                                Image(nsImage: img).resizable().scaledToFill().frame(width: 64, height: 64)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .overlay(alignment: .topTrailing) {
+                                        Button { attached.removeAll { $0 == p } } label: {
+                                            Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.6))
+                                        }.buttonStyle(.plain).padding(3)
+                                    }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField("cMessage", text: $draft, axis: .vertical)
+                TextField(attached.isEmpty ? "cMessage" : "Add a note, or just hit return", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .focused($focused)
@@ -135,7 +179,7 @@ struct ChatView: View {
                 Button(action: sendDraft) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 28))
-                        .foregroundStyle(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.secondary.opacity(0.4) : Palette.blue)
+                        .foregroundStyle(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty ? Color.secondary.opacity(0.4) : Palette.blue)
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.return, modifiers: .command)
@@ -147,9 +191,9 @@ struct ChatView: View {
     }
 
     private func sendDraft() {
-        let t = draft
-        draft = ""
-        store.send(t, in: convId)
+        let t = draft, a = attached
+        draft = ""; attached = []
+        store.send(t, in: convId, attachments: a)
     }
 }
 
@@ -179,11 +223,16 @@ struct MessageRow: View {
                         if lastInRun { Avatar(contact: store.contact(message.senderId), size: 28) }
                         else { Color.clear.frame(width: 28, height: 1) }
                     }
-                    Text(rendered)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .foregroundStyle(mine ? .white : .primary)
-                        .background(bubble)
+                    VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+                        ForEach(message.attachments ?? [], id: \.self) { p in
+                            if let img = IconCache.image(p) {
+                                Image(nsImage: img).resizable().scaledToFit().frame(maxWidth: 260, maxHeight: 260)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .onTapGesture(count: 2) { NSWorkspace.shared.open(URL(fileURLWithPath: p)) }
+                            }
+                        }
+                        if !message.text.isEmpty { bubbleText }
+                    }
                     if !mine { Spacer(minLength: 80) }
                 }
                 if message.kind == .error {
@@ -193,6 +242,14 @@ struct MessageRow: View {
             }
             .padding(.top, firstInRun ? 6 : 0)
         }
+    }
+
+    private var bubbleText: some View {
+        Text(rendered)
+            .textSelection(.enabled)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .foregroundStyle(mine ? .white : .primary)
+            .background(bubble)
     }
 
     private var rendered: AttributedString {

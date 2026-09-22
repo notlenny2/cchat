@@ -52,7 +52,7 @@ struct ContentView: View {
                     .tag(c.id)
                     .contextMenu { chatMenu(c) }
                     .draggable(c.id.uuidString) {
-                        HStack { GroupAvatar(ids: c.participantIds, size: 28); Text(store.title(for: c)) }
+                        HStack { GroupAvatar(ids: c.participantIds, size: 28, photo: c.photoPath); Text(store.title(for: c)) }
                             .padding(6).background(.regularMaterial, in: Capsule())
                     }
                     .dropDestination(for: String.self) { items, _ in
@@ -123,7 +123,7 @@ struct ConversationRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 8, height: 8).padding(.top, 16)
-            GroupAvatar(ids: conv.participantIds, size: 40)
+            GroupAvatar(ids: conv.participantIds, size: 40, photo: conv.photoPath)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(store.title(for: conv)).font(.headline).lineLimit(1)
@@ -174,7 +174,7 @@ struct PinnedGrid: View {
             ForEach(convs) { c in
                 Button { selected = c.id } label: {
                     VStack(spacing: 4) {
-                        GroupAvatar(ids: c.participantIds, size: 58)
+                        GroupAvatar(ids: c.participantIds, size: 58, photo: c.photoPath)
                             .overlay(alignment: .topTrailing) {
                                 if store.typing[c.id] != nil {
                                     TypingDots(dot: 4)
