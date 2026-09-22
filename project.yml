@@ -108,3 +108,4 @@ targets:
         PRODUCT_NAME: cchat
         PRODUCT_BUNDLE_IDENTIFIER: com.example.cmessage.cli
         CODE_SIGN_IDENTITY: "-"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) CCHAT_PERSONAL"

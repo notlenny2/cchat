@@ -13,7 +13,7 @@ enum RunnerError: LocalizedError {
     case failed(String)
     var errorDescription: String? {
         switch self {
-        case .claudeNotFound: return "Couldn't find Claude Code on this Mac."
+        case .claudeNotFound: return Flavor.personal ? "Couldn't find Claude Code on this Mac." : "Couldn't find Claude Code on this Mac. Open cChat > Settings to install it."
         case .folderMissing(let p): return "The project folder is gone: \(p)"
         case .failed(let s): return s
         }
@@ -221,7 +221,7 @@ enum ClaudeRunner {
         if let model, !model.isEmpty { args += ["-m", model] }
         for img in images { args += ["-i", img] }
         args.append("-")
-        let full = "[cChat app instructions, not from the user]\n\(instructions)\n[end of app instructions]\n\n\(prompt)"
+        let full = "[cChat app instructions, not from \(Prefs.userName)]\n\(instructions)\n[end of app instructions]\n\n\(prompt)"
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: codex)

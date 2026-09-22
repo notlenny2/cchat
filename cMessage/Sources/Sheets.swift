@@ -11,7 +11,7 @@ struct ContactsSheet: View {
     @State private var expanded: Set<UUID> = []
     @State private var importNote: String?
 
-    private var projectsRoot: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("projects") }
+    private var projectsRoot: URL { Prefs.projectsRoot }
 
     /// Folders in ~/projects that aren't contacts yet.
     private var unaddedFolders: [URL] {
@@ -50,7 +50,7 @@ struct ContactsSheet: View {
             if store.projects.isEmpty {
                 VStack(spacing: 8) {
                     Text("No contacts yet").font(.headline)
-                    Text("Every project is a contact. Add one from ~/projects with the + button, or bring over your NodeTerm chats.")
+                    Text(NodeTermImport.isInstalled ? "Every project is a contact. Add one from \(Prefs.projectsRootShort) with the + button, or bring over your NodeTerm chats." : "Every project is a contact. Add one from \(Prefs.projectsRootShort) with the + button.")
                         .foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
