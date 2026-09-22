@@ -203,6 +203,13 @@ final class RemoteServer: ObservableObject {
                 res.convId = store.selectedId
                 store.selectedId = before
             } else { res.ok = false }
+        case .newProject:
+            if let name = req.text, let c = try? store.createProject(named: name) {
+                let before = store.selectedId
+                store.openChat(with: c, engine: req.engine ?? .claude, model: req.model)
+                res.convId = store.selectedId
+                store.selectedId = before
+            } else { res.ok = false; res.error = "Couldn't make that project." }
         case .setModel:
             if let c = req.conv { store.setModel(c, req.model) } else { res.ok = false }
         case .icon:

@@ -168,6 +168,7 @@ struct NewChatSheet: View {
     let opened: (UUID) -> Void
     @State private var engine: Engine = .claude
     @State private var model = ""
+    @State private var newProject = ""
 
     var body: some View {
         NavigationStack {
@@ -181,6 +182,19 @@ struct NewChatSheet: View {
             }
             .padding(.horizontal)
             List {
+                Section("New project") {
+                    HStack {
+                        TextField("Name", text: $newProject).textInputAutocapitalization(.words)
+                        Button("Create") {
+                            let n = newProject
+                            Task {
+                                if let id = await client.newProject(n, engine: engine, model: model) { opened(id) }
+                                dismiss()
+                            }
+                        }
+                        .disabled(newProject.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
                 let all = client.snapshot?.contacts ?? []
                 ForEach(all.filter { $0.parentId == nil }.sorted { $0.name < $1.name }) { p in
                     Section(p.name) {

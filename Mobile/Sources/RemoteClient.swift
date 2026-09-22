@@ -98,6 +98,10 @@ final class RemoteClient: ObservableObject {
         try? await call(RPCRequest(op: .open, contact: contact, text: engine.rawValue, model: model)).convId
     }
 
+    func newProject(_ name: String, engine: Engine, model: String) async -> UUID? {
+        try? await call(RPCRequest(op: .newProject, text: name, model: model, engine: engine)).convId
+    }
+
     func setModel(_ conv: UUID, _ model: String) { fire(RPCRequest(op: .setModel, conv: conv, model: model)) }
 
     func models(for engine: Engine) -> [ModelOption] {

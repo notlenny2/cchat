@@ -260,6 +260,9 @@ struct NewMessageSheet: View {
     @State private var title = ""
     @State private var engine: Engine = .claude
     @State private var model = ""
+    @State private var newProject = ""
+    @State private var creating = false
+    @State private var createError: String?
     var existing: Conversation? = nil
 
     var body: some View {
@@ -307,9 +310,43 @@ struct NewMessageSheet: View {
                 Text("This chat runs on Codex.").font(.caption).foregroundStyle(.secondary)
             }
             List {
+                if existing == nil {
+                    if creating {
+                        HStack {
+                            Image(systemName: "folder.badge.plus").foregroundStyle(Palette.blue).frame(width: 26)
+                            TextField("New project name", text: $newProject).onSubmit(makeProject)
+                            Button("Create", action: makeProject).disabled(newProject.trimmingCharacters(in: .whitespaces).isEmpty)
+                        }
+                        if let createError { Text(createError).font(.caption).foregroundStyle(.red) }
+                    } else {
+                        Button { creating = true } label: {
+                            Label("New Project…", systemImage: "folder.badge.plus").foregroundStyle(Palette.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 ForEach(store.projects) { p in
                     toggleRow(p)
                     ForEach(store.subContacts(of: p.id)) { s in toggleRow(s).padding(.leading, 24) }
+                }
+                if existing == nil && !store.unaddedFolders.isEmpty {
+                    Section("Other projects in your folder") {
+                        ForEach(store.unaddedFolders, id: \.self) { u in
+                            Button {
+                                let c = store.addProject(path: u.path)
+                                if !picked.contains(c.id) { picked.append(c.id) }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "folder").foregroundStyle(.secondary).frame(width: 26)
+                                    Text(u.lastPathComponent)
+                                    Spacer()
+                                    Image(systemName: "circle").foregroundStyle(.secondary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
             .frame(minHeight: 280)
@@ -330,6 +367,14 @@ struct NewMessageSheet: View {
         .onAppear {
             if let e = existing { picked = e.participantIds; title = e.title ?? "" }
         }
+    }
+
+    private func makeProject() {
+        do {
+            let c = try store.createProject(named: newProject)
+            if !picked.contains(c.id) { picked.append(c.id) }
+            newProject = ""; creating = false; createError = nil
+        } catch { createError = error.localizedDescription }
     }
 
     private func toggleRow(_ c: Contact) -> some View {

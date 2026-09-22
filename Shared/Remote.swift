@@ -77,7 +77,7 @@ struct RemoteSnapshot: Codable {
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString
@@ -87,6 +87,7 @@ struct RPCRequest: Codable {
     var text: String? = nil
     var since: Int? = nil
     var model: String? = nil
+    var engine: Engine? = nil
 }
 
 struct RPCResponse: Codable {

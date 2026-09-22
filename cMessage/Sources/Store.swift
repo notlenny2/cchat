@@ -128,6 +128,50 @@ final class Store: ObservableObject {
 
     // MARK: Contacts
 
+    static var projectsRoot: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("projects") }
+
+    /// Folders in ~/projects that aren't contacts yet, so any project can be texted straight from New Message.
+    var unaddedFolders: [URL] {
+        let taken = Set(projects.map(\.projectPath))
+        let items = (try? FileManager.default.contentsOfDirectory(at: Self.projectsRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+        return items.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true && !taken.contains($0.path) }
+            .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    enum NewProjectError: LocalizedError {
+        case badName
+        var errorDescription: String? { "Give the project a name with at least one letter or number." }
+    }
+
+    /// Makes a brand-new project: a folder in ~/projects (named like "my-cool-app"), a git repo,
+    /// and a contact to text. The first agent to open it writes the real CLAUDE.md.
+    /// If a folder by that name already exists it's reused, never overwritten.
+    @discardableResult
+    func createProject(named raw: String) throws -> Contact {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let slug = name.lowercased().map { $0.isLetter || $0.isNumber ? String($0) : "-" }.joined()
+            .split(separator: "-").joined(separator: "-")
+        guard !slug.isEmpty, slug != ".", slug != ".." else { throw NewProjectError.badName }
+        let dir = Self.projectsRoot.appendingPathComponent(slug, isDirectory: true)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir.path) {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let readme = "# \(name)\n\nNew project, started from cChat on \(Date().formatted(date: .abbreviated, time: .omitted)).\nNothing built yet.\n"
+            try readme.write(to: dir.appendingPathComponent("CLAUDE.md"), atomically: true, encoding: .utf8)
+            let git = Process()
+            git.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            git.arguments = ["init", "-q"]
+            git.currentDirectoryURL = dir
+            do { try git.run(); git.waitUntilExit() } catch { Log.error("git init failed for \(slug): \(error)") }
+            Log.info("created project \(dir.path)")
+        }
+        var c = addProject(path: dir.path)
+        if c.name != name, let i = contacts.firstIndex(where: { $0.id == c.id }) {
+            contacts[i].name = name; c = contacts[i]; save()
+        }
+        return c
+    }
+
     @discardableResult
     func addProject(path: String) -> Contact {
         if let existing = contacts.first(where: { !$0.isSubContact && $0.projectPath == path }) { return existing }
