@@ -41,19 +41,44 @@ enum ClaudeRunner {
         return "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     }()
 
-    /// Found once and remembered. It used to be looked up per call, and a passing disk hiccup made a
-    /// turn fail with "couldn't find Claude Code" on a Mac where it plainly was installed (2026-09-22).
-    private static let foundClaude: String? = {
+    /// Where Claude Code and Codex live. Both update themselves by reinstalling, which leaves the command
+    /// missing for a few seconds; a turn landing in that gap failed with "Couldn't find Claude Code"
+    /// (2026-09-22, twice). The last place each was seen is remembered, looked for again if it's gone, and
+    /// a turn waits up to ~45s for it to come back before giving up.
+    private static let claudeSpots: [String] = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let fixed = ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.claude/local/claude"]
-        let fromPath = loginPath.split(separator: ":").map { "\($0)/claude" }
-        return (fixed + fromPath).first { FileManager.default.isExecutableFile(atPath: $0) }
+        return ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.claude/local/claude"]
     }()
-    static var claudePath: String? { foundClaude }
+    private static let codexSpots = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
+    private static let pathLock = NSLock()
+    private static var seen: [String: String] = [:]
+
+    private static func locate(_ name: String, _ spots: [String]) -> String? {
+        pathLock.lock(); defer { pathLock.unlock() }
+        let fm = FileManager.default
+        if let p = seen[name], fm.isExecutableFile(atPath: p) { return p }
+        let found = (spots + loginPath.split(separator: ":").map { "\($0)/\(name)" }).first { fm.isExecutableFile(atPath: $0) }
+        if let found { seen[name] = found }
+        return found
+    }
+
+    private static func waitFor(_ name: String, _ spots: [String]) async -> String? {
+        for attempt in 0..<16 {
+            if let p = locate(name, spots) {
+                if attempt > 0 { Log.info("\(name) is back (probably finished updating)") }
+                return p
+            }
+            if attempt == 0 { Log.info("\(name) missing, waiting for it (probably updating)") }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+        return nil
+    }
+
+    static var claudePath: String? { locate("claude", claudeSpots) }
 
     static func run(prompt: String, cwd: String, sessionId: String?, systemPrompt: String,
                     model: String, fullAccess: Bool, fork: Bool = false, extraDirs: [String] = []) async throws -> ClaudeResult {
-        guard let claude = claudePath else { throw RunnerError.claudeNotFound }
+        guard let claude = await waitFor("claude", claudeSpots) else { throw RunnerError.claudeNotFound }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
             throw RunnerError.folderMissing(cwd)
@@ -129,7 +154,7 @@ enum ClaudeRunner {
     /// A quick, tool-less, memory-less call used for small decisions (like who in a group should
     /// answer). Skips the user's settings, CLAUDE.md files and MCP servers so it costs a fraction of a cent.
     static func quick(prompt: String, system: String, model: String = "haiku") async throws -> String {
-        guard let claude = claudePath else { throw RunnerError.claudeNotFound }
+        guard let claude = await waitFor("claude", claudeSpots) else { throw RunnerError.claudeNotFound }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: claude)
         process.arguments = ["-p", "--output-format", "json", "--model", model, "--tools", "",
@@ -177,19 +202,14 @@ enum ClaudeRunner {
         return out
     }
 
-    private static let foundCodex: String? = {
-        let fixed = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
-        let fromPath = loginPath.split(separator: ":").map { "\($0)/codex" }
-        return (fixed + fromPath).first { FileManager.default.isExecutableFile(atPath: $0) }
-    }()
-    static var codexPath: String? { foundCodex }
+    static var codexPath: String? { locate("codex", codexSpots) }
 
     /// One turn of an OpenAI Codex agent (`codex exec --json`), shaped like a Claude result so the
     /// rest of the app doesn't care which one answered. Codex has no system-prompt flag, so cChat's
     /// house rules ride at the top of the message, clearly marked as coming from the app.
     static func runCodex(prompt: String, cwd: String, threadId: String?, instructions: String,
                          fullAccess: Bool, images: [String], model: String? = nil) async throws -> ClaudeResult {
-        guard let codex = codexPath else { throw RunnerError.failed("Couldn't find Codex on this Mac.") }
+        guard let codex = await waitFor("codex", codexSpots) else { throw RunnerError.failed("Couldn't find Codex on this Mac.") }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
             throw RunnerError.folderMissing(cwd)
