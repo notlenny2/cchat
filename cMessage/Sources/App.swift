@@ -34,6 +34,7 @@ struct CMessageApp: App {
                     Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
                     RemoteServer.shared.attach(store)
+                    SelfUpdate.start(store)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
                     WindowRescue.run()
