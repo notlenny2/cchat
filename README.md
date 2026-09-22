@@ -10,7 +10,8 @@ cChat is a free side project. It isn't made by or affiliated with Anthropic; it 
 you install yourself, signed in with your own Claude account, so usage counts against your own plan.
 
 ## Getting started
-1. Get cChat (see Build below).
+1. Download `cChat-<version>-mac.zip` from [Releases](https://github.com/notlenny2/cchat/releases/latest),
+   unzip it and drag cChat into Applications. (Or build it yourself, below.)
 2. Open it. The welcome screen checks for Claude Code, offers to install it with Anthropic's official
    installer, and opens Anthropic's own sign-in in Terminal. cChat never sees your login.
 3. Pick the folder your projects live in (default `~/projects`). Each folder in it can become a contact.
