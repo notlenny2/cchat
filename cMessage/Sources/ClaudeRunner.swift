@@ -5,6 +5,8 @@ struct ClaudeResult {
     var sessionId: String?
     var deniedTools: [String]
     var isError: Bool
+    /// The biggest memory the model that answered can hold (1M or 200k tokens), from Claude's own report.
+    var contextWindow: Int? = nil
 }
 
 enum RunnerError: LocalizedError {
@@ -148,7 +150,9 @@ enum ClaudeRunner {
         let isError = (obj["is_error"] as? Bool) ?? (status != 0)
         let text = (obj["result"] as? String) ?? ""
         if isError { Log.error("agent error: \(text.prefix(800))") }
-        return ClaudeResult(text: text, sessionId: obj["session_id"] as? String, deniedTools: denied, isError: isError)
+        let window = (obj["modelUsage"] as? [String: [String: Any]])?.values.compactMap { $0["contextWindow"] as? Int }.max()
+        return ClaudeResult(text: text, sessionId: obj["session_id"] as? String, deniedTools: denied, isError: isError,
+                            contextWindow: window)
     }
 
     /// A quick, tool-less, memory-less call used for small decisions (like who in a group should

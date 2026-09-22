@@ -707,6 +707,11 @@ final class Store: ObservableObject {
                     conversations[j].messages.append(Message(senderId: agentId, text: "\(displayName(agent)) was blocked from using: \(tools). Turn on Full Access in their info if you trust it.", kind: .system))
                 }
             }
+            // Still holding the project folder, so nothing else runs in it while memory is condensed.
+            if !conv.usesCodex, !result.isError, let sid = result.sessionId {
+                await condenseIfNeeded(agent, session: sid, window: result.contextWindow, in: convId,
+                                       model: conv.model ?? agent.model)
+            }
         } catch is CancellationError {
             Log.info("turn cancelled for \(agent.name)")
             if let j = index(of: convId) {
@@ -720,6 +725,32 @@ final class Store: ObservableObject {
         }
         if typing[convId] == agentId { typing[convId] = nil }
         save()
+    }
+
+    /// After a reply lands, condense this agent's memory in this chat if it has grown big (see Condense).
+    /// Groups too: each member has its own memory per chat and is checked after each of its turns.
+    /// Codex tidies its own threads, so only Claude sessions are condensed.
+    private func condenseIfNeeded(_ agent: Contact, session: String, window: Int?, in convId: UUID, model: String) async {
+        let size = await Task.detached(priority: .utility) { Condense.size(session: session) }.value
+        let limit = Condense.limit(window: window)
+        guard let size, size > limit, !Task.isCancelled else { return }
+        Log.info("condensing \(displayName(agent)): \(size / 1000)k > \(limit / 1000)k")
+        // The reply is already showing; don't keep "typing" up while this runs.
+        if typing[convId] == agent.id { typing[convId] = nil }
+        save()
+        do {
+            let r = try await ClaudeRunner.run(prompt: Condense.command, cwd: agent.projectPath, sessionId: session,
+                                               systemPrompt: "", model: model, fullAccess: false)
+            guard !r.isError else { Log.error("condense failed for \(agent.name): \(r.text.prefix(300))"); return }
+            Log.info("condensed \(displayName(agent)) (was \(size / 1000)k)")
+            guard let j = index(of: convId) else { return }
+            if let sid = r.sessionId, sid != session { conversations[j].sessions[agent.id.uuidString] = sid }
+            conversations[j].messages.append(Message(senderId: nil,
+                text: "Tidied up \(displayName(agent))'s memory so it stays quick. It still knows what you've been working on.",
+                kind: .system))
+        } catch {
+            Log.error("condense failed for \(agent.name): \(error)")
+        }
     }
 
     // MARK: Prompting
