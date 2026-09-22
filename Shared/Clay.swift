@@ -31,7 +31,7 @@ enum Clay {
     static let sidebar    = dyn((0.831, 0.910, 0.965), (0.106, 0.145, 0.192))   // ice slab
     static let cream      = dyn((0.973, 0.988, 1.000), (0.153, 0.204, 0.263))   // agent bubbles: snow
     static let peach      = dyn((0.780, 0.886, 0.961), (0.180, 0.243, 0.314))
-    static let terracotta = dyn((0.290, 0.604, 0.851), (0.431, 0.702, 0.914))   // the user, accents: glacier blue
+    static let terracotta = dyn((0.212, 0.518, 0.800), (0.247, 0.529, 0.816))   // the user, accents: glacier blue (white text stays readable)
     static let plum       = dyn((0.604, 0.463, 0.769), (0.557, 0.427, 0.722))   // other agents writing for the user
     static let ink        = dyn((0.129, 0.212, 0.294), (0.918, 0.953, 0.984))   // text on ice
     static let inkSoft    = dyn((0.376, 0.471, 0.557), (0.627, 0.706, 0.780))
@@ -71,7 +71,10 @@ struct ClaySurface<S: InsettableShape>: View {
     var body: some View {
         shape
             .fill(color)
-            .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.22 * depth), .clear, .black.opacity(0.10 * depth)],
+            .overlay(shape.fill(LinearGradient(stops: [.init(color: .white.opacity(0.22 * depth), location: 0),
+                                                       .init(color: .clear, location: 0.35),
+                                                       .init(color: .clear, location: 0.8),
+                                                       .init(color: .black.opacity(0.07 * depth), location: 1)],
                                                startPoint: .top, endPoint: .bottom)))
             .overlay(shape.inset(by: 0.75).stroke(LinearGradient(colors: [.white.opacity(0.55 * depth), .white.opacity(0), .black.opacity(0.12 * depth)],
                                                                    startPoint: .top, endPoint: .bottom), lineWidth: 1.5))

@@ -8,6 +8,7 @@ struct ContactsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var editing: Contact?
     @State private var addingSubTo: Contact?
+    @State private var teamFor: Contact?
     @State private var expanded: Set<UUID> = []
     @State private var importNote: String?
 
@@ -63,8 +64,13 @@ struct ContactsSheet: View {
                             ForEach(store.subContacts(of: p.id)) { s in
                                 row(s)
                             }
-                            Button { addingSubTo = p } label: {
-                                Label("New sub-contact", systemImage: "person.badge.plus")
+                            HStack(spacing: 14) {
+                                Button { addingSubTo = p } label: {
+                                    Label("New sub-contact", systemImage: "person.badge.plus")
+                                }
+                                Button { teamFor = p } label: {
+                                    Label("Call in the team", systemImage: "person.3.fill")
+                                }
                             }
                             .buttonStyle(.borderless).padding(.leading, 40)
                         } label: {
@@ -72,11 +78,15 @@ struct ContactsSheet: View {
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
         }
         .frame(width: 520, height: 560)
+        .background(Clay.canvas)
+        .foregroundStyle(Clay.ink)
         .sheet(item: $editing) { c in ContactEditor(contact: c).environmentObject(store) }
         .sheet(item: $addingSubTo) { p in SubContactSheet(project: p).environmentObject(store) }
+        .sheet(item: $teamFor) { p in TeamSheet(project: p).environmentObject(store) }
     }
 
     private func row(_ c: Contact) -> some View {
@@ -153,6 +163,8 @@ struct SubContactSheet: View {
         }
         .padding(20)
         .frame(width: 440)
+        .background(Clay.canvas)
+        .foregroundStyle(Clay.ink)
     }
 }
 
@@ -227,6 +239,8 @@ struct ContactEditor: View {
         }
         .padding(20)
         .frame(width: 480)
+        .background(Clay.canvas)
+        .foregroundStyle(Clay.ink)
         .confirmationDialog("Delete \(contact.name)?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) { store.delete(contact); dismiss() }
         } message: {
@@ -357,6 +371,7 @@ struct NewMessageSheet: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
             .frame(minHeight: 280)
             HStack {
                 Spacer()
@@ -372,6 +387,8 @@ struct NewMessageSheet: View {
         }
         .padding(20)
         .frame(width: 460, height: 520)
+        .background(Clay.canvas)
+        .foregroundStyle(Clay.ink)
         .onAppear {
             if let e = existing { picked = e.participantIds; title = e.title ?? "" }
         }

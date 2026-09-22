@@ -129,7 +129,7 @@ struct ChatView: View {
                         if prev == nil || m.date.timeIntervalSince(prev!.date) > 15 * 60 {
                             Text(timestamp(m.date)).font(.caption2).foregroundStyle(.secondary).padding(.top, 12).padding(.bottom, 4)
                         }
-                        MessageRow(message: m, isGroup: conv.isGroup,
+                        MessageRow(message: m, isGroup: conv.isGroup, shortNames: sameProject(conv),
                                    firstInRun: prev?.senderId != m.senderId || prev?.kind == .system,
                                    lastInRun: next?.senderId != m.senderId || next?.kind == .system)
                     }
@@ -155,6 +155,12 @@ struct ChatView: View {
     }
 
     // MARK: Composer
+
+    /// Every member is a specialist of the same project, so "example Tools Mechanic" can just be "Mechanic".
+    private func sameProject(_ conv: Conversation) -> Bool {
+        let parents = Set(conv.participantIds.map { store.contact($0)?.parentId })
+        return conv.isGroup && parents.count == 1 && parents.first! != nil
+    }
 
     private func composer(_ conv: Conversation) -> some View {
         VStack(spacing: 8) {
@@ -195,7 +201,7 @@ struct ChatView: View {
                 }
             }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(attached.isEmpty ? "cChat" : "Add a note, or just hit return", text: $draft, axis: .vertical)
+                TextField(attached.isEmpty ? "Text \(store.title(for: conv))" : "Add a note, or just hit return", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .focused($focused)
@@ -237,6 +243,7 @@ struct MessageRow: View {
     @EnvironmentObject var store: Store
     let message: Message
     let isGroup: Bool
+    var shortNames = false
     let firstInRun: Bool
     let lastInRun: Bool
 
@@ -252,7 +259,7 @@ struct MessageRow: View {
                     Text("\(f), on your behalf").font(.caption2).foregroundStyle(.secondary).padding(.trailing, 12)
                 }
                 if isGroup && !mine && firstInRun, let c = store.contact(message.senderId) {
-                    Text(store.displayName(c)).font(.caption2).foregroundStyle(.secondary).padding(.leading, 48)
+                    Text(shortNames ? c.name : store.displayName(c)).font(.caption2).foregroundStyle(.secondary).padding(.leading, 48)
                 }
                 HStack(alignment: .bottom, spacing: 8) {
                     if mine { Spacer(minLength: 80) }
@@ -264,6 +271,7 @@ struct MessageRow: View {
                         ForEach(message.attachments ?? [], id: \.self) { p in MediaView(path: p) }
                         if !message.text.isEmpty { bubbleText }
                     }
+                    .frame(maxWidth: 560, alignment: mine ? .trailing : .leading)
                     if !mine { Spacer(minLength: 80) }
                 }
                 if message.kind == .error {
