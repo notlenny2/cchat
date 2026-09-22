@@ -81,6 +81,11 @@ struct MainView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Clay.sidebar)
+        .safeAreaInset(edge: .bottom) {
+            if let u = client.snapshot?.usage, !u.isEmpty {
+                UsageMeter(report: u).padding(.horizontal, 12).padding(.bottom, 6)
+            }
+        }
         .overlay {
             if client.snapshot == nil {
                 ProgressView("Reaching \(client.pairing?.macName ?? "your Mac")…")

@@ -22,7 +22,7 @@ enum RunnerError: LocalizedError {
     }
 }
 
-/// Runs one turn of a Claude Code agent headlessly (`claude -p --output-format json`) and hands
+/// Runs one turn of a Claude Code agent headlessly (`claude -p --output-format stream-json`) and hands
 /// back only the final reply text. The prompt goes in on stdin, never argv, so nothing a user
 /// types can be read as a CLI flag.
 enum ClaudeRunner {
@@ -86,7 +86,7 @@ enum ClaudeRunner {
             throw RunnerError.folderMissing(cwd)
         }
 
-        var args = ["-p", "--output-format", "json",
+        var args = ["-p", "--output-format", "stream-json", "--verbose",
                     "--append-system-prompt", systemPrompt,
                     "--permission-mode", fullAccess ? "bypassPermissions" : "acceptEdits"]
         if let sessionId { args += ["--resume", sessionId] + (fork ? ["--fork-session"] : []) }
@@ -139,7 +139,7 @@ enum ClaudeRunner {
         if Task.isCancelled { throw CancellationError() }
 
         let raw = outBuf.data
-        guard let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
+        guard let obj = finalResult(raw) else {
             let err = String(data: errBuf.data, encoding: .utf8) ?? ""
             let out = String(data: raw, encoding: .utf8) ?? ""
             Log.error("unparseable output (exit \(status)) stderr=\(err.prefix(800)) stdout=\(out.prefix(800))")
@@ -161,7 +161,7 @@ enum ClaudeRunner {
         guard let claude = await waitFor("claude", claudeSpots) else { throw RunnerError.claudeNotFound }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: claude)
-        process.arguments = ["-p", "--output-format", "json", "--model", model, "--tools", "",
+        process.arguments = ["-p", "--output-format", "stream-json", "--verbose", "--model", model, "--tools", "",
                              "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "",
                              "--system-prompt", system]
         process.currentDirectoryURL = FileManager.default.temporaryDirectory
@@ -185,9 +185,27 @@ enum ClaudeRunner {
         }
         stdout.fileHandleForReading.readabilityHandler = nil
         outBuf.append(stdout.fileHandleForReading.readDataToEndOfFile())
-        guard let o = try? JSONSerialization.jsonObject(with: outBuf.data) as? [String: Any],
-              let r = o["result"] as? String else { throw RunnerError.failed("Quick call returned nothing") }
+        guard let o = finalResult(outBuf.data), let r = o["result"] as? String else { throw RunnerError.failed("Quick call returned nothing") }
         return r
+    }
+
+    /// Told whenever Claude Code reports how much of the plan is used (every turn, on its own).
+    nonisolated(unsafe) static var onUsage: (@Sendable (PlanUsage) -> Void)?
+
+    /// Claude Code's stream output is one JSON object per line; the last `result` line is the reply
+    /// (same shape as `--output-format json`). Plan usage rides along as a `rate_limit_event` line.
+    private static func finalResult(_ data: Data) -> [String: Any]? {
+        var result: [String: Any]?, usage: PlanUsage?
+        for line in data.split(separator: UInt8(ascii: "\n")) {
+            guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            switch o["type"] as? String {
+            case "result": result = o
+            case "rate_limit_event": usage = UsageWatch.claude(o) ?? usage
+            default: break
+            }
+        }
+        if let usage { onUsage?(usage) }
+        return result
     }
 
     /// Codex's own list of models (the ones it shows in its picker), newest first.

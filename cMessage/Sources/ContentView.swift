@@ -74,6 +74,9 @@ struct ContentView: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(Clay.sidebar)
+        .safeAreaInset(edge: .bottom) {
+            if !store.usage.isEmpty { UsageMeter(report: store.usage).padding(10) }
+        }
         .searchable(text: $search, placement: .sidebar, prompt: "Search")
         .toolbar {
             ToolbarItemGroup {

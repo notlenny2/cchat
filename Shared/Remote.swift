@@ -77,6 +77,8 @@ struct RemoteSnapshot: Codable {
     var waitingFor: [UUID: String]? = nil
     /// Models the phone can offer, per engine.
     var models: [String: [ModelOption]]? = nil
+    /// How much of the Claude and Codex plans is used, for the meter under the chat list.
+    var usage: UsageReport? = nil
 }
 
 struct RPCRequest: Codable {

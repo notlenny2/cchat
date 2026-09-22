@@ -25,7 +25,38 @@ final class Store: ObservableObject {
         return dir.appendingPathComponent("store.json")
     }()
 
-    init() { load(); flagUnanswered(); findMissingIcons() }
+    /// How much of the user's Claude and Codex plans is used, for the meter under the chat list.
+    @Published private(set) var usage: UsageReport = {
+        guard let d = UserDefaults.standard.data(forKey: "usage") else { return UsageReport() }
+        return (try? JSONDecoder().decode(UsageReport.self, from: d)) ?? UsageReport()
+    }()
+    private var usageTimer: Timer?
+
+    init() {
+        load(); flagUnanswered(); findMissingIcons()
+        ClaudeRunner.onUsage = { u in Task { @MainActor [weak self] in self?.setUsage(claude: u) } }
+        refreshCodexUsage()
+        usageTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshCodexUsage() }
+        }
+    }
+
+    private func refreshCodexUsage() {
+        Task.detached(priority: .utility) {
+            let u = UsageWatch.codex()
+            await MainActor.run { [weak self] in self?.setUsage(codex: u) }
+        }
+    }
+
+    private func setUsage(claude: PlanUsage? = nil, codex: PlanUsage? = nil) {
+        var next = usage
+        if let claude { next.claude = claude }
+        if let codex { next.codex = codex }
+        guard next != usage else { return }
+        usage = next
+        version += 1
+        if let d = try? JSONEncoder().encode(next) { UserDefaults.standard.set(d, forKey: "usage") }
+    }
 
     nonisolated static var photosDir: URL { folder("photos") }
     nonisolated static var attachmentsDir: URL { folder("attachments") }

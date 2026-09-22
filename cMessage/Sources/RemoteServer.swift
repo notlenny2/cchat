@@ -302,7 +302,8 @@ final class RemoteServer: ObservableObject {
                               typing: store.typing,
                               busy: store.conversations.map(\.id).filter(store.isBusy),
                               waitingFor: store.waitingFor,
-                              models: ["claude": ModelCatalog.claude, "codex": ClaudeRunner.codexModels])
+                              models: ["claude": ModelCatalog.claude, "codex": ClaudeRunner.codexModels],
+                              usage: store.usage.isEmpty ? nil : store.usage)
     }
 
     private static func scaled(_ path: String, maxSide: CGFloat) -> Data? {
