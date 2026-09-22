@@ -6,7 +6,7 @@ enum Log {
     private static let queue = DispatchQueue(label: "cmessage.log")
     static let url: URL = {
         let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/cMessage", isDirectory: true)
+            .appendingPathComponent("Library/Logs/\(Flavor.dataFolder)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("cmessage.log")
     }()

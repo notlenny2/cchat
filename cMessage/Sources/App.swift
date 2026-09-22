@@ -33,22 +33,33 @@ struct CMessageApp: App {
                 .onAppear {
                     Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
-                    RemoteServer.shared.attach(store)
-                    SelfUpdate.start(store)
+                    // The phone link and self-install are the user's: there's no public iPhone app to link, and
+                    // self-install rebuilds from his own source folder.
+                    if Flavor.personal {
+                        RemoteServer.shared.attach(store)
+                        SelfUpdate.start(store)
+                    }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
                     WindowRescue.run()
                 }
         }
         .windowToolbarStyle(.unified(showsTitle: false))
+
+        // cChat > Settings… (⌘,): name, Claude Code / Codex sign-in, projects folder.
+        Settings {
+            SetupView().environmentObject(store).fontDesign(.rounded).tint(Clay.terracotta)
+        }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Message") { NotificationCenter.default.post(name: .newMessage, object: nil) }
                     .keyboardShortcut("n")
                 Button("Contacts") { NotificationCenter.default.post(name: .showContacts, object: nil) }
                     .keyboardShortcut("k")
-                Divider()
-                Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
+                if Flavor.personal {
+                    Divider()
+                    Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
+                }
             }
         }
     }

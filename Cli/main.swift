@@ -45,7 +45,7 @@ if cmd == "pair" {
         fail("give the client a name, letters/numbers, e.g. cchat pair Helper", 2)
     }
     let base = ProcessInfo.processInfo.environment["CMESSAGE_DATA_DIR"].map { URL(fileURLWithPath: $0) }
-        ?? home.appendingPathComponent("Library/Application Support/cMessage")
+        ?? home.appendingPathComponent("Library/Application Support/\(Flavor.dataFolder)")
     let support = base.appendingPathComponent("clients", isDirectory: true)
     try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
     let keyFile = support.appendingPathComponent("\(name).key")

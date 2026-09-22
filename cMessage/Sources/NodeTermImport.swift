@@ -30,7 +30,7 @@ enum NodeTermImport {
         }
 
         var files: [URL] = []
-        let projects = home.appendingPathComponent("projects")
+        let projects = Prefs.projectsRoot
         for dir in (try? fm.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? [] {
             let f = dir.appendingPathComponent(".nodeterm/project.json")
             if fm.fileExists(atPath: f.path) { files.append(f) }

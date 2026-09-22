@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var showNew = false
     @State private var showContacts = false
     @State private var showPairing = false
+    @State private var showSetup = !Prefs.setupDone
     @State private var renaming: Conversation?
     @State private var newName = ""
     @State private var dropTarget: UUID?
@@ -27,7 +28,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showContacts)) { _ in showContacts = true }
         .onReceive(NotificationCenter.default.publisher(for: .showPairing)) { _ in showPairing = true }
         .sheet(isPresented: $showPairing) { PairingSheet() }
-        .onAppear { if store.contacts.isEmpty { showContacts = true } }
+        .sheet(isPresented: $showSetup) {
+            SetupView { showSetup = false; if store.contacts.isEmpty { showContacts = true } }
+                .interactiveDismissDisabled()
+        }
+        .onAppear { if Prefs.setupDone && store.contacts.isEmpty { showContacts = true } }
     }
 
     private var filtered: [Conversation] {
@@ -70,8 +75,10 @@ struct ContentView: View {
         .searchable(text: $search, placement: .sidebar, prompt: "Search")
         .toolbar {
             ToolbarItemGroup {
-                Button { showPairing = true } label: { Image(systemName: "iphone") }
-                    .help("Connect iPhone or iPad")
+                if Flavor.personal {
+                    Button { showPairing = true } label: { Image(systemName: "iphone") }
+                        .help("Connect iPhone or iPad")
+                }
                 Button { showContacts = true } label: { Image(systemName: "person.crop.circle") }
                     .help("Contacts")
                 Button { showNew = true } label: { Image(systemName: "square.and.pencil") }
