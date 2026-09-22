@@ -167,6 +167,13 @@ struct ContactEditor: View {
     var body: some View {
         VStack(spacing: 14) {
             Avatar(contact: contact, size: 64)
+            HStack(spacing: 12) {
+                Button("Choose Picture…", action: pickPicture).buttonStyle(.link)
+                if contact.iconPath != nil {
+                    Button("Remove Picture") { contact.iconPath = nil; contact.iconSearched = true }.buttonStyle(.link)
+                }
+            }
+            .font(.caption)
             if let p = store.contact(contact.parentId) {
                 Text("Part of \(p.name)").font(.caption).foregroundStyle(.secondary)
             }
@@ -218,6 +225,15 @@ struct ContactEditor: View {
         } message: {
             Text(contact.isSubContact ? "Their chats go too." : "This also deletes its sub-contacts and their chats. The project folder is not touched.")
         }
+    }
+
+    private func pickPicture() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.image]
+        panel.directoryURL = URL(fileURLWithPath: contact.projectPath)
+        if panel.runModal() == .OK, let u = panel.url { contact.iconPath = u.path }
     }
 
     private func pickFolder() {

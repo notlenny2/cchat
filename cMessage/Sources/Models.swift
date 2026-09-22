@@ -16,6 +16,9 @@ struct Contact: Identifiable, Codable, Hashable {
     var colorIndex: Int = 0
     /// Set when this contact was imported from a NodeTerm chat, so re-importing doesn't duplicate it.
     var nodeTermId: String? = nil
+    /// Contact photo: the project's app icon (found automatically) or a picture the user chose.
+    var iconPath: String? = nil
+    var iconSearched: Bool? = nil
 
     var isSubContact: Bool { parentId != nil }
     var initials: String {

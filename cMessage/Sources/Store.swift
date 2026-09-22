@@ -18,7 +18,7 @@ final class Store: ObservableObject {
         return dir.appendingPathComponent("store.json")
     }()
 
-    init() { load() }
+    init() { load(); findMissingIcons() }
 
     // MARK: Persistence
 
@@ -83,6 +83,7 @@ final class Store: ObservableObject {
         let c = Contact(name: prettify(folder), projectPath: path, colorIndex: contacts.count)
         contacts.append(c)
         save()
+        findMissingIcons()
         return c
     }
 

@@ -146,6 +146,7 @@ extension Store {
             added += 1
         }
         save()
+        findMissingIcons()
         return added
     }
 

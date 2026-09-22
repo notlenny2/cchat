@@ -70,22 +70,42 @@ enum Palette {
 }
 
 struct Avatar: View {
+    @EnvironmentObject var store: Store
     let contact: Contact?
     var size: CGFloat = 40
 
     var body: some View {
         let g = Palette.gradients[abs(contact?.colorIndex ?? 0) % Palette.gradients.count]
+        let icon = contact.flatMap { IconCache.image(store.iconPath(for: $0)) }
         ZStack {
-            Circle().fill(LinearGradient(colors: g, startPoint: .top, endPoint: .bottom))
-            Text(contact?.initials ?? "?")
-                .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-            if contact?.isSubContact == true {
-                // Small ring marks a sub-contact so it reads as "part of" a project.
-                Circle().strokeBorder(.white.opacity(0.55), lineWidth: max(1, size * 0.04)).padding(size * 0.06)
+            if let icon {
+                Image(nsImage: icon).resizable().interpolation(.high).scaledToFill()
+                    .frame(width: size, height: size).clipShape(Circle())
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.08)))
+            } else {
+                Circle().fill(LinearGradient(colors: g, startPoint: .top, endPoint: .bottom))
+                Text(contact?.initials ?? "?")
+                    .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                if contact?.isSubContact == true {
+                    // Small ring marks a sub-contact so it reads as "part of" a project.
+                    Circle().strokeBorder(.white.opacity(0.55), lineWidth: max(1, size * 0.04)).padding(size * 0.06)
+                }
             }
         }
         .frame(width: size, height: size)
+        .overlay(alignment: .bottomTrailing) {
+            // A sub-contact wearing its project's icon gets a little initials badge so you can tell them apart.
+            if icon != nil, let c = contact, c.isSubContact, c.iconPath == nil, size >= 26 {
+                Text(c.initials)
+                    .font(.system(size: max(7, size * 0.2), weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, size * 0.07).padding(.vertical, size * 0.03)
+                    .background(Capsule().fill(LinearGradient(colors: g, startPoint: .top, endPoint: .bottom)))
+                    .overlay(Capsule().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+                    .offset(x: size * 0.08, y: size * 0.04)
+            }
+        }
     }
 }
 
