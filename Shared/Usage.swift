@@ -27,14 +27,43 @@ struct UsageReport: Codable, Hashable {
 /// The meter at the bottom of the chat list (Mac and iPhone/iPad): one line per AI, two clay bars each.
 struct UsageMeter: View {
     var report: UsageReport
+    /// Tap the card to fold it down to one line; remembered per device.
+    @AppStorage("usageCollapsed") private var collapsed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let c = report.claude { row("Claude", c) }
-            if let c = report.codex { row("Codex", c) }
+            HStack(spacing: 10) {
+                if collapsed {
+                    if let c = report.claude { summary("Claude", c) }
+                    if let c = report.codex { summary("Codex", c) }
+                } else {
+                    Text("Usage").font(.system(.caption, design: .rounded).weight(.semibold)).foregroundStyle(Clay.ink.opacity(0.6))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: collapsed ? "chevron.up" : "chevron.down")
+                    .font(.caption2.weight(.semibold)).foregroundStyle(Clay.ink.opacity(0.5))
+            }
+            if !collapsed {
+                if let c = report.claude { row("Claude", c) }
+                if let c = report.codex { row("Codex", c) }
+            }
         }
-        .padding(.horizontal, 12).padding(.vertical, 10)
+        .padding(.horizontal, 12).padding(.vertical, collapsed ? 8 : 10)
         .clay(Clay.cream, radius: 14, depth: 0.6)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.snappy) { collapsed.toggle() } }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(collapsed ? "Show usage details" : "Fold usage down")
+    }
+
+    /// Collapsed: the fuller of the two limits, colored like its bar.
+    private func summary(_ name: String, _ u: PlanUsage) -> some View {
+        let v = min(max(max(u.session?.current ?? 0, u.week?.current ?? 0), 0), 1)
+        return HStack(spacing: 4) {
+            Circle().fill(color(v)).frame(width: 7, height: 7)
+            Text("\(name) \(Int((v * 100).rounded()))%").monospacedDigit()
+        }
+        .font(.system(.caption, design: .rounded).weight(.medium)).foregroundStyle(Clay.ink)
     }
 
     private func row(_ name: String, _ u: PlanUsage) -> some View {
