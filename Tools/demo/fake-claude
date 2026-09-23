@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+# Stand-in for Claude Code while filming the demo: scripted replies, same stream-json shape.
+import sys, json, time, uuid
+prompt = sys.stdin.read()
+last = prompt.lower()[-600:]
+if "live" in last:
+    reply = ("It's ready, but this puts it in front of real customers, so I'll wait for your OK. "
+             "Say go and it's live in about a minute.\n"
+             "<<needs you: OK to publish the pickup page>>\n"
+             "<<next: go ahead | wait until Monday | show me on a phone>>")
+elif "pickup" in last:
+    reply = ("Done. There's a new **Order for Pickup** page. People pick their loaves, choose a pickup day and time, "
+             "and you get an email for every order. They pay at the counter for now.\n\n"
+             "Here's how it looks:\n<<show: /tmp/cchat-demo/order-page.png>>\n"
+             "<<next: add paying online | change pickup times | put it live>>")
+else:
+    reply = "On it.\n<<next: thanks | what's next | show me>>"
+time.sleep(3.2 if "live" not in last else 2.6)
+now = time.time()
+print(json.dumps({"type": "rate_limit_event", "rate_limit_info": {"unifiedWindows": {
+    "five_hour": {"utilization": 0.34, "resetsAt": now + 7200},
+    "seven_day": {"utilization": 0.22, "resetsAt": now + 400000}}}}))
+print(json.dumps({"type": "result", "result": reply, "session_id": str(uuid.uuid4()),
+                  "is_error": False, "permission_denials": []}))

@@ -96,7 +96,9 @@ struct MediaView: View {
                 }
                 .task { if poster == nil { poster = Media.poster(path) } }
             } else if let img = IconCache.image(path) {
-                Image(nsImage: img).resizable().scaledToFit().frame(maxWidth: 320, maxHeight: 320)
+                // Sized exactly to the picture: a 320x320 box centered a narrow one, so it sat indented from the bubbles.
+                let k = min(320 / max(img.size.width, 1), 320 / max(img.size.height, 1))
+                Image(nsImage: img).resizable().scaledToFit().frame(width: img.size.width * k, height: img.size.height * k)
                     .onTapGesture(count: 2) { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
             }
         }

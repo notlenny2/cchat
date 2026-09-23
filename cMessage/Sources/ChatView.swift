@@ -3,6 +3,7 @@ import SwiftUI
 struct ChatView: View {
     @EnvironmentObject var store: Store
     let convId: UUID
+    var terminalFolder: String?
     @State private var draft = ""
     @State private var showInfo = false
     @State private var attached: [String] = []
@@ -19,6 +20,7 @@ struct ChatView: View {
                     .background(Clay.sidebar.opacity(0.55).ignoresSafeArea(edges: .top))
                     .overlay(alignment: .bottom) { Rectangle().fill(Clay.shadow.opacity(0.08)).frame(height: 1) }
                 transcript(conv)
+                if let terminalFolder { TerminalDrawer(folder: terminalFolder).padding(.top, 6) }
                 composer(conv)
             }
             .overlay {
@@ -144,8 +146,18 @@ struct ChatView: View {
                 .padding(.top, 6)
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
-            .onChange(of: conv.messages.count) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
-            .onChange(of: store.typing[convId]) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: conv.messages.count) { _, _ in toBottom(proxy) }
+            .onChange(of: store.typing[convId]) { _, _ in toBottom(proxy) }
+            // The chips appearing under a reply shrink the transcript, which left the end of a reply cut off.
+            .onChange(of: conv.suggestions) { _, _ in toBottom(proxy) }
+        }
+    }
+
+    /// Scrolls to the end, then again once pictures and the chips have taken their real size.
+    private func toBottom(_ proxy: ScrollViewProxy) {
+        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
 
@@ -269,8 +281,11 @@ struct MessageRow: View {
                         else { Color.clear.frame(width: 28, height: 1) }
                     }
                     VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+                        // Your pictures sit above your note (like Messages); an agent's words come first, since
+                        // they usually lead into the picture ("Here's how it looks:").
+                        if !mine, !message.text.isEmpty { bubbleText }
                         ForEach(message.attachments ?? [], id: \.self) { p in MediaView(path: p) }
-                        if !message.text.isEmpty { bubbleText }
+                        if mine, !message.text.isEmpty { bubbleText }
                     }
                     .frame(maxWidth: 560, alignment: mine ? .trailing : .leading)
                     if !mine { Spacer(minLength: 80) }

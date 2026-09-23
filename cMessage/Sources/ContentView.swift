@@ -10,31 +10,17 @@ struct ContentView: View {
     @State private var renaming: Conversation?
     @State private var newName = ""
     @State private var dropTarget: UUID?
-    @ObservedObject private var terminals = TerminalPool.shared
 
     var body: some View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 400)
         } detail: {
-            VStack(spacing: 0) {
-                if let id = store.selectedId, store.index(of: id) != nil {
-                    ChatView(convId: id).id(id)
-                } else {
-                    emptyState.frame(maxHeight: .infinity)
-                }
-                if terminals.shown {
-                    TerminalDrawer(folder: terminalFolder).transition(.move(edge: .bottom))
-                }
-            }
-            .clipped()
-            // On the chat side, not the sidebar: the sidebar's toolbar has room for three buttons and
-            // a fourth pushed New Message off the end.
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { terminals.toggle() } label: { Image(systemName: "terminal") }
-                        .help("Terminal in this chat's project folder (⌃`)")
-                }
+            // The terminal lives in ChatView, as a fold-out row just above the text box.
+            if let id = store.selectedId, store.index(of: id) != nil {
+                ChatView(convId: id, terminalFolder: terminalFolder).id(id)
+            } else {
+                emptyState
             }
         }
         // No stock white title bar over the chat: the chat header's color runs up under it.

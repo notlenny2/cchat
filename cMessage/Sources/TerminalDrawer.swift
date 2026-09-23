@@ -52,40 +52,56 @@ final class TerminalPool: NSObject, ObservableObject, LocalProcessTerminalViewDe
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 }
 
-/// The drawer itself: a grab bar to resize, the folder name, a close button, and the terminal.
+/// A row just above the text box. Folded it's one slim "Terminal" line; tap it (or ⌃`) and the terminal
+/// opens right there. Drag the top edge to make it taller or shorter.
 struct TerminalDrawer: View {
     @ObservedObject var pool = TerminalPool.shared
     let folder: String
     @State private var dragStart: CGFloat?
 
+    private static let dark = Color(red: 0.11, green: 0.12, blue: 0.14)
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "terminal").font(.caption)
-                Text(URL(fileURLWithPath: folder).lastPathComponent).font(.system(.caption, design: .rounded).weight(.semibold))
-                Spacer()
-                Button { pool.toggle() } label: { Image(systemName: "chevron.down") }
-                    .buttonStyle(.borderless).help("Slide the terminal away (⌃`)")
-            }
-            .foregroundStyle(Color(white: 0.8))
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .overlay(alignment: .top) {
-                Capsule().fill(Color(white: 0.5)).frame(width: 36, height: 4).padding(.top, 3)
-            }
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 2)
-                .onChanged { v in
-                    if dragStart == nil { dragStart = pool.height }
-                    pool.height = min(max((dragStart ?? pool.height) - v.translation.height, 120), 700)
+            Button { pool.toggle() } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "terminal").font(.caption)
+                    Text("Terminal").font(.system(.caption, design: .rounded).weight(.semibold))
+                    Text(URL(fileURLWithPath: folder).lastPathComponent).font(.system(.caption, design: .rounded))
+                        .opacity(0.7).lineLimit(1)
+                    Spacer()
+                    Image(systemName: pool.shown ? "chevron.down" : "chevron.up").font(.caption.weight(.semibold))
                 }
-                .onEnded { _ in dragStart = nil })
-            .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
-            TerminalHost(folder: folder).padding(.horizontal, 6).padding(.bottom, 6)
+                .foregroundStyle(pool.shown ? Color(white: 0.8) : Clay.inkSoft)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(pool.shown ? "Fold the terminal away (⌃`)" : "Open a terminal in this project's folder (⌃`)")
+            .overlay(alignment: .top) {
+                if pool.shown {
+                    // Grab strip along the top edge for resizing.
+                    Color.clear.frame(height: 6).contentShape(Rectangle())
+                        .overlay(Capsule().fill(Color(white: 0.5)).frame(width: 36, height: 4).padding(.top, 2), alignment: .top)
+                        .gesture(DragGesture(minimumDistance: 2)
+                            .onChanged { v in
+                                if dragStart == nil { dragStart = pool.height }
+                                pool.height = min(max((dragStart ?? pool.height) - v.translation.height, 120), 700)
+                            }
+                            .onEnded { _ in dragStart = nil })
+                        .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
+                }
+            }
+            if pool.shown {
+                TerminalHost(folder: folder).padding(.horizontal, 6).padding(.bottom, 6)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
-        .frame(height: pool.height)
-        .background(Color(red: 0.11, green: 0.12, blue: 0.14))
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 14, topTrailingRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: 10, y: -2)
+        .frame(height: pool.shown ? pool.height : nil)
+        .background(pool.shown ? Self.dark : Clay.sidebar.opacity(0.35))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: .black.opacity(pool.shown ? 0.25 : 0), radius: 10, y: -2)
+        .padding(.horizontal, 14)
     }
 }
 

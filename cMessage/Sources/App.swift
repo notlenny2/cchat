@@ -88,7 +88,10 @@ struct Avatar: View {
 
     var body: some View {
         let g = Palette.gradients[abs(contact?.colorIndex ?? 0) % Palette.gradients.count]
-        let icon = contact.flatMap { IconCache.image(store.iconPath(for: $0)) }
+        // Small avatars of a sub-contact wearing its project's icon (group pictures, group chat bubbles) all
+        // looked identical and the initials badge was too tiny to read, so those show their own clay initials.
+        let borrowed = contact.map { $0.isSubContact && $0.iconPath == nil } ?? false
+        let icon = borrowed && size < 32 ? nil : contact.flatMap { IconCache.image(store.iconPath(for: $0)) }
         ZStack {
             if let icon {
                 Image(nsImage: icon).resizable().interpolation(.high).scaledToFill()
@@ -130,8 +133,9 @@ struct EngineBadge: View {
         if conv.usesCodex {
             Text("Codex").font(.system(size: 9, weight: .bold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 1.5)
-                .foregroundStyle(.white)
-                .background(Capsule().fill(Color(red: 0.13, green: 0.13, blue: 0.15)))
+                // Ink on canvas, so it flips in dark mode (a black tag vanished on the dark chat list).
+                .foregroundStyle(Clay.canvas)
+                .background(Capsule().fill(Clay.ink))
         }
     }
 }
