@@ -5,6 +5,7 @@ struct ChatView: View {
     @EnvironmentObject var client: RemoteClient
     let convId: UUID
     @State private var draft = ""
+    @State private var scrolledUp = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -88,12 +89,13 @@ struct ChatView: View {
                         }
                         .padding(.top, 6)
                     }
-                    Color.clear.frame(height: 4).id("bottom")
+                    Color.clear.frame(height: 4).id("bottom").reportsChatBottom()
                 }
                 .padding(.horizontal, 12)
             }
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
+            .jumpToLatest($scrolledUp) { toBottom(proxy) }
             .onChange(of: conv.messages.count) { _, _ in toBottom(proxy) }
             .onChange(of: client.typing(in: convId)) { _, _ in toBottom(proxy) }
             // The chips appearing under a reply shrink the transcript, which left the end of a reply cut off.

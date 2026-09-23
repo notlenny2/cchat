@@ -13,6 +13,7 @@ struct ChatView: View {
     @AppStorage(ShowWork.key) private var showWork = false
     /// How many of the latest messages are drawn; "Show earlier" adds more.
     @State private var shownCount = ChatView.page
+    @State private var scrolledUp = false
 
     /// The transcript is a plain VStack, not a LazyVStack: the lazy one's prefetching kicked AppKit into an endless
     /// "update constraints" loop and crashed the app (2026-09-23, twice, with SIGTRAP in LazyLayoutViewCache
@@ -163,11 +164,12 @@ struct ChatView: View {
                                 .padding(.leading, conv.isGroup ? 36 : 0).padding(.trailing, 80).padding(.top, 4)
                         }
                     }
-                    Color.clear.frame(height: 6).id("bottom")
+                    Color.clear.frame(height: 6).id("bottom").reportsChatBottom()
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 6)
             }
+            .jumpToLatest($scrolledUp) { toBottom(proxy) }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: conv.messages.count) { _, _ in toBottom(proxy) }
             .onChange(of: store.typing[convId]) { _, _ in toBottom(proxy) }
