@@ -28,6 +28,14 @@ struct ContentView: View {
                 }
             }
             .clipped()
+            // On the chat side, not the sidebar: the sidebar's toolbar has room for three buttons and
+            // a fourth pushed New Message off the end.
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { terminals.toggle() } label: { Image(systemName: "terminal") }
+                        .help("Terminal in this chat's project folder (⌃`)")
+                }
+            }
         }
         // No stock white title bar over the chat: the chat header's color runs up under it.
         .toolbarBackground(.hidden, for: .windowToolbar)
@@ -98,8 +106,6 @@ struct ContentView: View {
                     Button { showPairing = true } label: { Image(systemName: "iphone") }
                         .help("Connect iPhone or iPad")
                 }
-                Button { terminals.toggle() } label: { Image(systemName: "terminal") }
-                    .help("Terminal in this chat's project folder (⌃`)")
                 Button { showContacts = true } label: { Image(systemName: "person.crop.circle") }
                     .help("Contacts")
                 Button { showNew = true } label: { Image(systemName: "square.and.pencil") }
