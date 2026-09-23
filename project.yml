@@ -2,14 +2,18 @@ name: cChat
 options:
   deploymentTarget:
     macOS: "14.0"
+packages:
+  # A real terminal (colors, full-screen programs) for the slide-up terminal drawer.
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    from: 1.9.0
 settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.1"
     CURRENT_PROJECT_VERSION: "2"
 targets:
-  # cChat for Mac. Built into Release-public so it never collides with a personal build (see personal.yml,
-  # which is optional and not part of this repo).
+  # cChat for Mac. (An optional personal build can live beside it in personal.yml, not part of this repo.)
   cChat:
     type: application
     platform: macOS
@@ -17,6 +21,8 @@ targets:
       - Shared
       - cMessage/Sources
       - cMessage/Resources
+    dependencies:
+      - package: SwiftTerm
     info:
       path: cMessage/Info-Public.plist
       properties:
@@ -28,7 +34,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.notlenny2.cchat
         PRODUCT_NAME: cChat
-        CONFIGURATION_BUILD_DIR: "$(BUILD_DIR)/$(CONFIGURATION)-public"
         # The app launches the local `claude` CLI, so it cannot run inside the App Sandbox.
         ENABLE_APP_SANDBOX: NO
         CODE_SIGN_STYLE: Automatic

@@ -10,17 +10,24 @@ struct ContentView: View {
     @State private var renaming: Conversation?
     @State private var newName = ""
     @State private var dropTarget: UUID?
+    @ObservedObject private var terminals = TerminalPool.shared
 
     var body: some View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 400)
         } detail: {
-            if let id = store.selectedId, store.index(of: id) != nil {
-                ChatView(convId: id).id(id)
-            } else {
-                emptyState
+            VStack(spacing: 0) {
+                if let id = store.selectedId, store.index(of: id) != nil {
+                    ChatView(convId: id).id(id)
+                } else {
+                    emptyState.frame(maxHeight: .infinity)
+                }
+                if terminals.shown {
+                    TerminalDrawer(folder: terminalFolder).transition(.move(edge: .bottom))
+                }
             }
+            .clipped()
         }
         // No stock white title bar over the chat: the chat header's color runs up under it.
         .toolbarBackground(.hidden, for: .windowToolbar)
@@ -35,6 +42,13 @@ struct ContentView: View {
                 .interactiveDismissDisabled()
         }
         .onAppear { if Prefs.setupDone && store.contacts.isEmpty { showContacts = true } }
+    }
+
+    /// The open chat's project folder (a group uses its first member's), else the projects folder.
+    private var terminalFolder: String {
+        if let id = store.selectedId, let c = store.conversations.first(where: { $0.id == id }),
+           let p = store.contact(c.participantIds.first)?.projectPath { return p }
+        return Prefs.projectsRoot.path
     }
 
     private var filtered: [Conversation] {
@@ -84,6 +98,8 @@ struct ContentView: View {
                     Button { showPairing = true } label: { Image(systemName: "iphone") }
                         .help("Connect iPhone or iPad")
                 }
+                Button { terminals.toggle() } label: { Image(systemName: "terminal") }
+                    .help("Terminal in this chat's project folder (⌃`)")
                 Button { showContacts = true } label: { Image(systemName: "person.crop.circle") }
                     .help("Contacts")
                 Button { showNew = true } label: { Image(systemName: "square.and.pencil") }

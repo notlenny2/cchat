@@ -56,6 +56,8 @@ struct CMessageApp: App {
                     .keyboardShortcut("n")
                 Button("Contacts") { NotificationCenter.default.post(name: .showContacts, object: nil) }
                     .keyboardShortcut("k")
+                Button("Show or Hide Terminal") { TerminalPool.shared.toggle() }
+                    .keyboardShortcut("`", modifiers: .control)
                 if Flavor.personal {
                     Divider()
                     Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }

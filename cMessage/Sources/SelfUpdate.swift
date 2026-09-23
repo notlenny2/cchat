@@ -29,6 +29,8 @@ enum SelfUpdate {
 
     private static func check(_ store: Store) {
         guard let mine = mtime(Bundle.main.bundleURL), let theirs = mtime(buildURL), theirs > mine.addingTimeInterval(5) else { return }
+        // Only ever swap in this same app, never the public build if it lands in the same folder.
+        guard Bundle(url: buildURL)?.bundleIdentifier == Bundle.main.bundleIdentifier else { return }
         let busy = store.conversations.contains { store.isBusy($0.id) }
         let sinceKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
         guard !busy, sinceKey > 60 else { quietSince = nil; return }
