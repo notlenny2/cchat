@@ -473,6 +473,7 @@ final class Store: ObservableObject {
         m.from = from
         conversations[i].messages.append(m)
         if from == nil { conversations[i].needsYou = nil }
+        passed[convId] = nil
         if from != nil && selectedId != convId { conversations[i].unread = true }
         conversations[i].suggestions = []
         if everyone {
@@ -676,12 +677,17 @@ final class Store: ObservableObject {
                 : a.map { "[A picture is attached. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
             return m.text.isEmpty ? pics : "\(m.text)\n\(pics)"
         }
-        let prompt: String
+        var prompt: String
         if conv.isGroup {
             prompt = fresh.map { m in
                 let who = m.senderId.flatMap { contact($0) }.map(displayName) ?? m.from.map { "\($0) (for \(Prefs.userName))" } ?? Prefs.userName
                 return "\(who): \(body(m))"
             }.joined(separator: "\n\n")
+            // The router (or a hand-off) gave this one to them alone. Left to the group rules they'd often PASS
+            // on anything a bit outside their lane, and the user's message went unanswered.
+            if conv.pending.isEmpty, Self.unanswered(conv) {
+                prompt += "\n\n(cChat: nobody else here is answering this, so it's yours. Answer \(Prefs.userName) yourself, even briefly; don't PASS.)"
+            }
         } else {
             prompt = fresh.map { m in m.from.map { "\($0) (for \(Prefs.userName)): \(body(m))" } ?? body(m) }.joined(separator: "\n\n")
         }
@@ -750,6 +756,7 @@ final class Store: ObservableObject {
                 if refs.count > media.count { Log.error("\(refs.count - media.count) of \(refs.count) media refs from \(agent.name) couldn't be shown") }
                 guard let j = index(of: convId) else { return }
                 let pass = conv.isGroup && media.isEmpty && body.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("PASS")
+                if pass { handOff(after: agentId, in: convId) }
                 if !pass && (!body.isEmpty || !media.isEmpty) {
                     conversations[j].messages.append(Message(senderId: agentId, text: body, attachments: media.isEmpty ? nil : media))
                     if !next.isEmpty { conversations[j].suggestions = next }
@@ -786,6 +793,33 @@ final class Store: ObservableObject {
         }
         if typing[convId] == agentId { typing[convId] = nil }
         save()
+    }
+
+    /// No agent has answered the user's latest message yet.
+    static func unanswered(_ conv: Conversation) -> Bool {
+        guard let mine = conv.messages.lastIndex(where: { $0.senderId == nil && $0.kind == .normal }) else { return false }
+        return !conv.messages[(mine + 1)...].contains { $0.senderId != nil && $0.kind == .normal }
+    }
+
+    /// Who has said PASS since the user's last message, per chat.
+    private var passed: [UUID: Set<UUID>] = [:]
+
+    /// An agent said PASS. If that leaves the user's message with no answer and nobody else queued, hand it to the
+    /// next member who hasn't passed, so a message never just dies in a group.
+    private func handOff(after agentId: UUID, in convId: UUID) {
+        guard let i = index(of: convId) else { return }
+        passed[convId, default: []].insert(agentId)
+        guard conversations[i].pending.isEmpty, Self.unanswered(conversations[i]) else { return }
+        let left = conversations[i].participantIds.compactMap { contact($0) }.filter { !passed[convId]!.contains($0.id) }
+        let name = contact(agentId).map(displayName) ?? "They"
+        if let next = directorsLast(left).first {
+            conversations[i].pending.append(next)
+            let nextName = contact(next).map(displayName) ?? "someone else"
+            conversations[i].messages.append(Message(senderId: nil, text: "\(name) passed, so \(nextName) is taking it.", kind: .system))
+            Log.info("pass: \(name) -> \(nextName)")
+        } else {
+            conversations[i].messages.append(Message(senderId: nil, text: "Nobody here had anything to add. Try @naming who you want.", kind: .system))
+        }
     }
 
     /// After a reply lands, condense this agent's memory in this chat if it has grown big (see Condense).
