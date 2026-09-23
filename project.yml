@@ -23,6 +23,8 @@ targets:
       - cMessage/Resources
     dependencies:
       - package: SwiftTerm
+      # Videos in chats: SwiftUI's VideoPlayer needs AVKit linked by name, or the app crashes the moment one plays.
+      - sdk: AVKit.framework
     info:
       path: cMessage/Info-Public.plist
       properties:
