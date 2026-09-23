@@ -62,6 +62,8 @@ struct RemoteContact: Codable, Identifiable, Hashable {
     var colorIndex: Int
     var hasIcon: Bool
     var initials: String
+    /// A sub-contact with its own picture (not borrowing its project's icon). Optional so older Macs still decode.
+    var ownIcon: Bool? = nil
 }
 
 struct RemoteSnapshot: Codable {

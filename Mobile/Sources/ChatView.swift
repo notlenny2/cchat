@@ -94,8 +94,18 @@ struct ChatView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
-            .onChange(of: conv.messages.count) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
-            .onChange(of: client.typing(in: convId)) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: conv.messages.count) { _, _ in toBottom(proxy) }
+            .onChange(of: client.typing(in: convId)) { _, _ in toBottom(proxy) }
+            // The chips appearing under a reply shrink the transcript, which left the end of a reply cut off.
+            .onChange(of: conv.suggestions) { _, _ in toBottom(proxy) }
+        }
+    }
+
+    /// Scrolls to the end, then again once pictures and the chips have taken their real size.
+    private func toBottom(_ proxy: ScrollViewProxy) {
+        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
 
@@ -173,14 +183,11 @@ struct Bubble: View {
                         else { Color.clear.frame(width: 28, height: 1) }
                     }
                     VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+                        // Your pictures sit above your note (like Messages); an agent's words come first, since
+                        // they usually lead into the picture ("Here's how it looks:").
+                        if !mine, !message.text.isEmpty { bubbleText }
                         ForEach(message.attachments ?? [], id: \.self) { RemoteMedia(name: $0) }
-                        if !message.text.isEmpty {
-                            Text(rendered)
-                                .textSelection(.enabled)
-                                .padding(.horizontal, 13).padding(.vertical, 8)
-                                .foregroundStyle(mine ? .white : Clay.ink)
-                                .background(bubble)
-                        }
+                        if mine, !message.text.isEmpty { bubbleText }
                     }
                     if !mine { Spacer(minLength: 60) }
                 }
@@ -191,6 +198,14 @@ struct Bubble: View {
             }
             .padding(.top, firstInRun ? 6 : 0)
         }
+    }
+
+    private var bubbleText: some View {
+        Text(rendered)
+            .textSelection(.enabled)
+            .padding(.horizontal, 13).padding(.vertical, 8)
+            .foregroundStyle(mine ? .white : Clay.ink)
+            .background(bubble)
     }
 
     private var rendered: AttributedString {

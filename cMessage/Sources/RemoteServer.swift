@@ -294,7 +294,8 @@ final class RemoteServer: ObservableObject {
         let contacts = store.contacts.map { c in
             RemoteContact(id: c.id, name: c.name, displayName: store.displayName(c), parentId: c.parentId,
                           folder: URL(fileURLWithPath: c.projectPath).lastPathComponent, role: c.role,
-                          colorIndex: c.colorIndex, hasIcon: store.iconPath(for: c) != nil, initials: c.initials)
+                          colorIndex: c.colorIndex, hasIcon: store.iconPath(for: c) != nil, initials: c.initials,
+                          ownIcon: c.iconPath != nil)
         }
         return RemoteSnapshot(version: store.version, macName: Host.current().localizedName ?? "Mac",
                               contacts: contacts,

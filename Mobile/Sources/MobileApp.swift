@@ -38,7 +38,10 @@ struct Avatar: View {
 
     var body: some View {
         let g = Palette.gradients[abs(contact?.colorIndex ?? 0) % Palette.gradients.count]
-        let icon = contact.flatMap { client.icons[$0.id] }
+        // Small avatars of a sub-contact wearing its project's icon (group pictures, group chat bubbles) all
+        // looked identical and the initials badge was too tiny to read, so those show their own clay initials.
+        let borrowed = contact.map { $0.parentId != nil && $0.ownIcon != true } ?? false
+        let icon = borrowed && size < 32 ? nil : contact.flatMap { client.icons[$0.id] }
         ZStack {
             if let icon {
                 Image(uiImage: icon).resizable().scaledToFill().frame(width: size, height: size).clipShape(Circle())
@@ -48,11 +51,15 @@ struct Avatar: View {
                 ClaySurface(shape: Circle(), color: g[1], depth: 0.8)
                     .overlay(Circle().fill(LinearGradient(colors: [g[0].opacity(0.9), .clear], startPoint: .top, endPoint: .center)))
                 Text(contact?.initials ?? "…").font(.system(size: size * 0.4, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                if contact?.parentId != nil {
+                    // Small ring marks a sub-contact so it reads as "part of" a project.
+                    Circle().strokeBorder(.white.opacity(0.55), lineWidth: max(1, size * 0.04)).padding(size * 0.06)
+                }
             }
         }
         .frame(width: size, height: size)
         .overlay(alignment: .bottomTrailing) {
-            if icon != nil, let c = contact, c.parentId != nil, size >= 28 {
+            if icon != nil, let c = contact, c.parentId != nil, c.ownIcon != true, size >= 28 {
                 Text(c.initials).font(.system(size: max(7, size * 0.2), weight: .bold, design: .rounded)).foregroundStyle(.white)
                     .padding(.horizontal, size * 0.07).padding(.vertical, size * 0.03)
                     .background(Capsule().fill(LinearGradient(colors: g, startPoint: .top, endPoint: .bottom)))
