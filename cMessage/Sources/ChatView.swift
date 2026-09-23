@@ -218,6 +218,12 @@ struct ChatView: View {
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .focused($focused)
+                    // Shift-Return starts a new line instead of sending (like Messages and Slack).
+                    .onKeyPress(.return, phases: .down) { press in
+                        guard press.modifiers.contains(.shift) else { return .ignored }
+                        draft += "\n"
+                        return .handled
+                    }
                     .onSubmit(sendDraft)
                     .padding(.horizontal, 14).padding(.vertical, 9)
                     .background(
