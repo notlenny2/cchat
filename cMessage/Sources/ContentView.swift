@@ -152,28 +152,28 @@ struct ConversationRow: View {
             GroupAvatar(ids: conv.participantIds, size: 40, photo: conv.photoPath)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(store.title(for: conv)).font(.headline).lineLimit(1).foregroundStyle(Clay.ink)
+                    Text(store.title(for: conv)).zfont(.headline).lineLimit(1).foregroundStyle(Clay.ink)
                     EngineBadge(conv: conv)
                     if conv.needsYou != nil { NeedsYouTag() }
                     Spacer()
                     Text(conv.messages.last.map { shortDate($0.date) } ?? "")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .zfont(.caption).foregroundStyle(.secondary)
                 }
                 if let w = store.waitingFor[conv.id] {
-                    Text("waiting for \(w)").font(.subheadline).foregroundStyle(Clay.inkSoft).lineLimit(1)
+                    Text("waiting for \(w)").zfont(.subheadline).foregroundStyle(Clay.inkSoft).lineLimit(1)
                 } else if store.typing[conv.id] != nil {
                     HStack(spacing: 6) {
                         TypingDots(dot: 6)
                             .padding(.horizontal, 9).padding(.vertical, 6)
                             .clayCapsule(Clay.cream, depth: 0.6)
                         if conv.isGroup, let c = store.contact(store.typing[conv.id]) {
-                            Text(c.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Text(c.name).zfont(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
                 } else if let why = conv.needsYou {
-                    Text(why).font(.subheadline).foregroundStyle(Clay.ink).lineLimit(2)
+                    Text(why).zfont(.subheadline).foregroundStyle(Clay.ink).lineLimit(2)
                 } else {
-                    Text(preview).font(.subheadline).foregroundStyle(Clay.inkSoft).lineLimit(2)
+                    Text(preview).zfont(.subheadline).foregroundStyle(Clay.inkSoft).lineLimit(2)
                 }
             }
         }
@@ -219,7 +219,7 @@ struct PinnedGrid: View {
                             .overlay(Circle().stroke(selected == c.id ? Palette.blue : c.needsYou != nil ? NeedsYouTag.color : .clear, lineWidth: 2.5).padding(-3))
                         HStack(spacing: 4) {
                             if c.unread { Circle().fill(Palette.blue).frame(width: 7, height: 7) }
-                            Text(store.title(for: c)).font(.caption).lineLimit(1)
+                            Text(store.title(for: c)).zfont(.caption).lineLimit(1)
                                 .foregroundStyle(selected == c.id ? Clay.terracotta : Clay.ink)
                         }
                     }

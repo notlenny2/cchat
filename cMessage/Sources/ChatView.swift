@@ -27,7 +27,7 @@ struct ChatView: View {
                 if dropping {
                     RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Clay.terracotta, style: StrokeStyle(lineWidth: 3, dash: [8]))
                         .background(Clay.terracotta.opacity(0.06))
-                        .overlay(Label("Drop to send to \(store.title(for: conv))", systemImage: "photo").font(.title3).padding(12)
+                        .overlay(Label("Drop to send to \(store.title(for: conv))", systemImage: "photo").zfont(.title3).padding(12)
                                     .clayCapsule(Clay.cream))
                         .padding(8).allowsHitTesting(false)
                 }
@@ -41,6 +41,7 @@ struct ChatView: View {
             }
             .background(Clay.canvas.ignoresSafeArea())
             .foregroundStyle(Clay.ink)
+            .zfont(.body)       // bubbles and the text box; smaller labels set their own
             .sheet(isPresented: $showInfo) { InfoSheet(convId: convId).environmentObject(store) }
             .onAppear { focused = true; store.markRead(convId) }
         }
@@ -65,12 +66,12 @@ struct ChatView: View {
                         }
                         .help("Drop a picture here to make it the photo")
                     HStack(spacing: 2) {
-                        Text(store.title(for: conv)).font(.caption.weight(.medium)).foregroundStyle(.primary)
+                        Text(store.title(for: conv)).zfont(.caption, weight: .medium).foregroundStyle(.primary)
                         EngineBadge(conv: conv)
                         Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
                     }
                     if let sub = subtitle(conv) {
-                        Text(sub).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Text(sub).zfont(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
             }
@@ -103,7 +104,7 @@ struct ChatView: View {
                         }
                     }
                 } label: {
-                    Label(store.modelSummary(conv), systemImage: "cpu").font(.caption)
+                    Label(store.modelSummary(conv), systemImage: "cpu").zfont(.caption)
                 }
                 .menuStyle(.borderlessButton).fixedSize()
                 .help("Pick which model answers in this chat")
@@ -130,7 +131,7 @@ struct ChatView: View {
                         let prev = idx > 0 ? shown[idx - 1] : nil
                         let next = idx + 1 < shown.count ? shown[idx + 1] : nil
                         if prev == nil || m.date.timeIntervalSince(prev!.date) > 15 * 60 {
-                            Text(timestamp(m.date)).font(.caption2).foregroundStyle(.secondary).padding(.top, 12).padding(.bottom, 4)
+                            Text(timestamp(m.date)).zfont(.caption2).foregroundStyle(.secondary).padding(.top, 12).padding(.bottom, 4)
                         }
                         MessageRow(message: m, isGroup: conv.isGroup, shortNames: sameProject(conv),
                                    firstInRun: prev?.senderId != m.senderId || prev?.kind == .system,
@@ -182,7 +183,7 @@ struct ChatView: View {
                     HStack(spacing: 8) {
                         ForEach(conv.suggestions, id: \.self) { s in
                             Button { store.send(s, in: convId) } label: {
-                                Text(s).font(.callout.weight(.medium))
+                                Text(s).zfont(.callout, weight: .medium)
                                     .padding(.horizontal, 13).padding(.vertical, 7)
                                     .foregroundStyle(Clay.terracotta)
                                     .clayCapsule(Clay.cream, depth: 0.7)
@@ -260,6 +261,7 @@ struct ChatView: View {
 
 struct MessageRow: View {
     @EnvironmentObject var store: Store
+    @Environment(\.zoom) private var zoom
     let message: Message
     let isGroup: Bool
     var shortNames = false
@@ -270,15 +272,15 @@ struct MessageRow: View {
 
     var body: some View {
         if message.kind == .system {
-            Text(message.text).font(.caption).foregroundStyle(.secondary)
+            Text(message.text).zfont(.caption).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center).padding(.vertical, 6).frame(maxWidth: .infinity)
         } else {
             VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
                 if let f = message.from {
-                    Text("\(f), on your behalf").font(.caption2).foregroundStyle(.secondary).padding(.trailing, 12)
+                    Text("\(f), on your behalf").zfont(.caption2).foregroundStyle(.secondary).padding(.trailing, 12)
                 }
                 if isGroup && !mine && firstInRun, let c = store.contact(message.senderId) {
-                    Text(shortNames ? c.name : store.displayName(c)).font(.caption2).foregroundStyle(.secondary).padding(.leading, 48)
+                    Text(shortNames ? c.name : store.displayName(c)).zfont(.caption2).foregroundStyle(.secondary).padding(.leading, 48)
                 }
                 HStack(alignment: .bottom, spacing: 8) {
                     if mine { Spacer(minLength: 80) }
@@ -293,12 +295,12 @@ struct MessageRow: View {
                         ForEach(message.attachments ?? [], id: \.self) { p in MediaView(path: p) }
                         if mine, !message.text.isEmpty { bubbleText }
                     }
-                    .frame(maxWidth: 560, alignment: mine ? .trailing : .leading)
+                    .frame(maxWidth: 560 * zoom, alignment: mine ? .trailing : .leading)
                     if !mine { Spacer(minLength: 80) }
                 }
                 if message.kind == .error {
                     Label("Not Delivered", systemImage: "exclamationmark.circle.fill")
-                        .font(.caption2).foregroundStyle(.red).padding(.leading, isGroup ? 48 : 12)
+                        .zfont(.caption2).foregroundStyle(.red).padding(.leading, isGroup ? 48 : 12)
                 }
             }
             .padding(.top, firstInRun ? 6 : 0)
@@ -338,9 +340,9 @@ struct TypingRow: View {
                 .padding(.horizontal, 15).padding(.vertical, 12)
                 .clay(Clay.cream, radius: 20)
             if let w = waitingFor {
-                Text("waiting for \(w) to finish in this project").font(.caption2).foregroundStyle(.secondary)
+                Text("waiting for \(w) to finish in this project").zfont(.caption2).foregroundStyle(.secondary)
             } else if isGroup, let c = contact {
-                Text("\(c.name) is typing").font(.caption2).foregroundStyle(.secondary)
+                Text("\(c.name) is typing").zfont(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
         }

@@ -22,11 +22,13 @@ enum WindowRescue {
 @main
 struct CMessageApp: App {
     @StateObject private var store = Store()
+    @AppStorage(Zoom.key) private var zoom = 1.0
 
     var body: some Scene {
         WindowGroup("cChat") {
             ContentView()
                 .environmentObject(store)
+                .environment(\.zoom, zoom)
                 .fontDesign(.rounded)
                 .tint(Clay.terracotta)
                 .frame(minWidth: 760, minHeight: 480)
@@ -58,6 +60,12 @@ struct CMessageApp: App {
                 Divider()
                 Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
             }
+            CommandGroup(before: .toolbar) {
+                Button("Bigger Text") { Zoom.step(0.1) }.keyboardShortcut("=")
+                Button("Smaller Text") { Zoom.step(-0.1) }.keyboardShortcut("-")
+                Button("Actual Size") { Zoom.reset() }.keyboardShortcut("0")
+                Divider()
+            }
         }
     }
 }
@@ -67,6 +75,56 @@ extension Notification.Name {
     static let showContacts = Notification.Name("cmessage.showContacts")
     static let renameChat = Notification.Name("cmessage.renameChat")
     static let showPairing = Notification.Name("cmessage.showPairing")
+}
+
+// MARK: - Text size
+
+/// View > Bigger Text / Smaller Text / Actual Size (⌘= ⌘- ⌘0). macOS ignores Dynamic Type, so cChat scales its own
+/// fonts: views use `.zfont(.caption)` instead of `.font(.caption)` and pick the size up from the environment.
+enum Zoom {
+    static let key = "zoom"
+    static func step(_ by: Double) {
+        let now = UserDefaults.standard.object(forKey: key) as? Double ?? 1
+        UserDefaults.standard.set(min(max(((now + by) * 10).rounded() / 10, 0.8), 2.0), forKey: key)
+    }
+    static func reset() { UserDefaults.standard.set(1.0, forKey: key) }
+
+    /// macOS's own point sizes for each text style.
+    static func size(_ style: Font.TextStyle) -> CGFloat {
+        switch style {
+        case .largeTitle: 26
+        case .title: 22
+        case .title2: 17
+        case .title3: 15
+        case .headline, .body: 13
+        case .callout: 12
+        case .subheadline: 11
+        default: 10     // footnote, caption, caption2
+        }
+    }
+}
+
+private struct ZoomKey: EnvironmentKey { static let defaultValue = 1.0 }
+extension EnvironmentValues {
+    var zoom: Double {
+        get { self[ZoomKey.self] }
+        set { self[ZoomKey.self] = newValue }
+    }
+}
+
+private struct ZoomedFont: ViewModifier {
+    @Environment(\.zoom) private var zoom
+    let style: Font.TextStyle
+    let weight: Font.Weight?
+    func body(content: Content) -> some View {
+        content.font(.system(size: Zoom.size(style) * zoom, weight: weight ?? (style == .headline ? .bold : .regular)))
+    }
+}
+
+extension View {
+    func zfont(_ style: Font.TextStyle, weight: Font.Weight? = nil) -> some View {
+        modifier(ZoomedFont(style: style, weight: weight))
+    }
 }
 
 // MARK: - Look
