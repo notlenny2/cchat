@@ -16,7 +16,7 @@ struct WorkLog: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 5) {
                     ForEach(steps) { step in row(step).id(step.id) }
                 }
                 .padding(10)

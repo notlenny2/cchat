@@ -11,6 +11,13 @@ struct ChatView: View {
     @State private var photoDrop = false
     @FocusState private var focused: Bool
     @AppStorage(ShowWork.key) private var showWork = false
+    /// How many of the latest messages are drawn; "Show earlier" adds more.
+    @State private var shownCount = ChatView.page
+
+    /// The transcript is a plain VStack, not a LazyVStack: the lazy one's prefetching kicked AppKit into an endless
+    /// "update constraints" loop and crashed the app (2026-09-23, twice, with SIGTRAP in LazyLayoutViewCache
+    /// .signalPrefetch). Drawing only the latest messages keeps a long chat quick without it.
+    static let page = 120
 
     private var conv: Conversation? { store.index(of: convId).map { store.conversations[$0] } }
 
@@ -131,8 +138,13 @@ struct ChatView: View {
     private func transcript(_ conv: Conversation) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 2) {
-                    let shown = conv.messages.squishedJoins
+                VStack(spacing: 2) {
+                    let all = conv.messages.squishedJoins
+                    let shown = Array(all.suffix(shownCount))
+                    if all.count > shown.count {
+                        Button("Show earlier messages") { shownCount += Self.page }
+                            .buttonStyle(.borderless).zfont(.caption).padding(.vertical, 8)
+                    }
                     ForEach(Array(shown.enumerated()), id: \.element.id) { idx, m in
                         let prev = idx > 0 ? shown[idx - 1] : nil
                         let next = idx + 1 < shown.count ? shown[idx + 1] : nil

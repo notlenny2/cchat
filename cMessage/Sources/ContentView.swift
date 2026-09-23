@@ -203,8 +203,19 @@ struct PinnedGrid: View {
     @Binding var selected: UUID?
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 12) {
-            ForEach(convs) { c in
+        // Plain rows of three, not a LazyVGrid: lazy containers set off an endless layout loop on macOS (see ChatView.page).
+        VStack(spacing: 12) {
+            ForEach(Array(stride(from: 0, to: convs.count, by: 3)), id: \.self) { start in
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(convs[start..<min(start + 3, convs.count)]) { c in tile(c) }
+                    ForEach(0..<(3 - min(3, convs.count - start)), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func tile(_ c: Conversation) -> some View {
                 Button { selected = c.id } label: {
                     VStack(spacing: 4) {
                         GroupAvatar(ids: c.participantIds, size: 58, photo: c.photoPath)
@@ -230,8 +241,5 @@ struct PinnedGrid: View {
                 .contextMenu {
                     Button("Unpin") { withAnimation { store.togglePin(c.id) } }
                 }
-            }
-        }
-        .padding(.vertical, 8)
     }
 }
