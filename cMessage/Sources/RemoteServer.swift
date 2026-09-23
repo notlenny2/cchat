@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import SystemConfiguration
 import AppKit
 
 /// Serves the iPhone/iPad app over the local network. Only runs once a pairing key exists.
@@ -71,9 +72,12 @@ final class RemoteServer: ObservableObject {
         return PairingInfo(key: key, hosts: Self.localHosts(), port: Remote.port, macName: Host.current().localizedName ?? "Mac")
     }
 
-    /// LAN addresses first, then the Bonjour name, so the phone has something to try at home.
+    /// LAN addresses first, then the Bonjour name, so the phone has something to try at home. The address on the
+    /// Mac's main connection goes first: with the Mac on both Wi-Fi and a cable, the author's router wouldn't let
+    /// the phone reach the Mac's Wi-Fi address at all (wireless-to-wireless blocked), only the cabled one.
     static func localHosts() -> [String] {
         var out: [String] = []
+        let primary = (SCDynamicStoreCopyValue(nil, "State:/Network/Global/IPv4" as CFString) as? [String: Any])?["PrimaryInterface"] as? String
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         if getifaddrs(&ifaddr) == 0, let first = ifaddr {
             for p in sequence(first: first, next: { $0.pointee.ifa_next }) {
@@ -83,7 +87,10 @@ final class RemoteServer: ObservableObject {
                 var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                 if getnameinfo(sa, socklen_t(sa.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
                     let ip = String(cString: host)
-                    if !ip.hasPrefix("169.254") && !out.contains(ip) { out.append(ip) }
+                    let name = String(cString: p.pointee.ifa_name)
+                    if !ip.hasPrefix("169.254") && !out.contains(ip) {
+                        if name == primary { out.insert(ip, at: 0) } else { out.append(ip) }
+                    }
                 }
             }
             freeifaddrs(ifaddr)

@@ -40,6 +40,8 @@ final class RemoteClient: ObservableObject {
         icons = [:]; iconRequested = []
         hostIndex = 0
         link = .connecting
+        // A loop already running is still using the old addresses; start over with the new ones.
+        stop()
         start()
         return true
     }
@@ -57,6 +59,8 @@ final class RemoteClient: ObservableObject {
     func start() {
         guard pairing != nil, loop == nil else { return }
         loop = Task { [weak self] in
+            // Start on an address that actually answers, not whichever was listed first.
+            if let p = self?.pairing, let i = await Self.firstReachable(p.hosts, port: p.port) { self?.hostIndex = i }
             while !Task.isCancelled {
                 guard let self else { return }
                 do {
@@ -75,7 +79,10 @@ final class RemoteClient: ObservableObject {
                         why = "iPhone is blocking cChat from your home network. Turn on Settings > Privacy & Security > Local Network > cChat."
                     }
                     self.link = .offline(why)
-                    self.hostIndex += 1
+                    // Try every address the Mac gave at once and keep whichever answers, instead of waiting out a
+                    // dead one (a Mac on Wi-Fi AND a cable can be reachable on only one of them).
+                    if let p = self.pairing, let i = await Self.firstReachable(p.hosts, port: p.port) { self.hostIndex = i }
+                    else { self.hostIndex += 1 }
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                 }
             }
@@ -176,6 +183,40 @@ final class RemoteClient: ObservableObject {
     }
 
     enum ClientError: Error { case rejected, http(Int), mismatch }
+
+    /// The earliest-listed host that accepts a connection, all tried at the same time (a few seconds at most).
+    /// The Mac lists its best address first, so list order wins over whichever answered quickest.
+    private static func firstReachable(_ hosts: [String], port: UInt16) async -> Int? {
+        await withTaskGroup(of: Int?.self) { group in
+            for (i, h) in hosts.enumerated() {
+                group.addTask { await reachable(h, port: port) ? i : nil }
+            }
+            var ok: [Int] = []
+            for await r in group { if let r { ok.append(r) } }
+            return ok.min()
+        }
+    }
+
+    private static func reachable(_ host: String, port: UInt16) async -> Bool {
+        await withCheckedContinuation { cont in
+            let conn = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+            let lock = NSLock()
+            var finished = false
+            func finish(_ v: Bool) {
+                lock.lock(); defer { lock.unlock() }
+                if !finished { finished = true; conn.cancel(); cont.resume(returning: v) }
+            }
+            conn.stateUpdateHandler = { state in
+                switch state {
+                case .ready: finish(true)
+                case .failed, .cancelled: finish(false)
+                default: break
+                }
+            }
+            conn.start(queue: .global())
+            DispatchQueue.global().asyncAfter(deadline: .now() + 4) { finish(false) }
+        }
+    }
 
     /// Asks the network stack directly whether iOS is refusing local-network access for this app,
     /// which otherwise just looks like "can't connect".
