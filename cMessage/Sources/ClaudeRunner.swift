@@ -79,7 +79,8 @@ enum ClaudeRunner {
     static var claudePath: String? { locate("claude", claudeSpots) }
 
     static func run(prompt: String, cwd: String, sessionId: String?, systemPrompt: String,
-                    model: String, fullAccess: Bool, fork: Bool = false, extraDirs: [String] = []) async throws -> ClaudeResult {
+                    model: String, fullAccess: Bool, fork: Bool = false, extraDirs: [String] = [],
+                    onStep: (@Sendable (WorkStep) -> Void)? = nil) async throws -> ClaudeResult {
         guard let claude = await waitFor("claude", claudeSpots) else { throw RunnerError.claudeNotFound }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
@@ -110,7 +111,12 @@ enum ClaudeRunner {
 
         // Drain both pipes as data arrives so a long reply can't fill the buffer and deadlock.
         let outBuf = DataBox(), errBuf = DataBox()
-        stdout.fileHandleForReading.readabilityHandler = { outBuf.append($0.availableData) }
+        let feed = LineFeed { line in onStep.map { cb in claudeSteps(line).forEach(cb) } }
+        stdout.fileHandleForReading.readabilityHandler = { h in
+            let d = h.availableData
+            outBuf.append(d)
+            if onStep != nil { feed.append(d) }
+        }
         stderr.fileHandleForReading.readabilityHandler = { errBuf.append($0.availableData) }
 
         Log.info("run \(URL(fileURLWithPath: cwd).lastPathComponent) resume=\(sessionId ?? "new") model=\(model.isEmpty ? "default" : model) full=\(fullAccess)")
@@ -236,7 +242,8 @@ enum ClaudeRunner {
     /// rest of the app doesn't care which one answered. Codex has no system-prompt flag, so cChat's
     /// house rules ride at the top of the message, clearly marked as coming from the app.
     static func runCodex(prompt: String, cwd: String, threadId: String?, instructions: String,
-                         fullAccess: Bool, images: [String], model: String? = nil) async throws -> ClaudeResult {
+                         fullAccess: Bool, images: [String], model: String? = nil,
+                         onStep: (@Sendable (WorkStep) -> Void)? = nil) async throws -> ClaudeResult {
         guard let codex = await waitFor("codex", codexSpots) else { throw RunnerError.failed("Couldn't find Codex on this Mac.") }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
@@ -263,7 +270,12 @@ enum ClaudeRunner {
         process.standardOutput = stdout
         process.standardError = stderr
         let outBuf = DataBox(), errBuf = DataBox()
-        stdout.fileHandleForReading.readabilityHandler = { outBuf.append($0.availableData) }
+        let feed = LineFeed { line in onStep.map { cb in codexSteps(line).forEach(cb) } }
+        stdout.fileHandleForReading.readabilityHandler = { h in
+            let d = h.availableData
+            outBuf.append(d)
+            if onStep != nil { feed.append(d) }
+        }
         stderr.fileHandleForReading.readabilityHandler = { errBuf.append($0.availableData) }
         Log.info("codex \(URL(fileURLWithPath: cwd).lastPathComponent) resume=\(threadId ?? "new") full=\(fullAccess) images=\(images.count)")
 
@@ -307,6 +319,90 @@ enum ClaudeRunner {
         return ClaudeResult(text: messages.joined(separator: "\n\n"), sessionId: thread, deniedTools: [], isError: false)
     }
 
+    // MARK: Show the Work
+
+    /// Turns one line of Claude Code's stream into steps: tools it called, what they returned, its thinking and
+    /// in-between remarks.
+    static func claudeSteps(_ line: Data) -> [WorkStep] {
+        guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              let msg = o["message"] as? [String: Any], let blocks = msg["content"] as? [[String: Any]] else { return [] }
+        var out: [WorkStep] = []
+        for b in blocks {
+            switch (o["type"] as? String, b["type"] as? String) {
+            case ("assistant", "tool_use"):
+                let name = b["name"] as? String ?? "Tool"
+                out.append(WorkStep(kind: .tool, title: name, text: WorkStep.clip(describe(name, b["input"] as? [String: Any] ?? [:]), 600),
+                                    ref: b["id"] as? String))
+            case ("assistant", "text"):
+                if let t = b["text"] as? String, !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    out.append(WorkStep(kind: .note, text: WorkStep.clip(t)))
+                }
+            case ("assistant", "thinking"):
+                if let t = b["thinking"] as? String, !t.isEmpty { out.append(WorkStep(kind: .thinking, text: WorkStep.clip(t))) }
+            case ("user", "tool_result"):
+                var text = ""
+                if let s = b["content"] as? String { text = s }
+                else if let parts = b["content"] as? [[String: Any]] {
+                    text = parts.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : "[picture]" }.joined(separator: "\n")
+                }
+                out.append(WorkStep(kind: .output, text: WorkStep.clip(text.isEmpty ? "(no output)" : text),
+                                    failed: (b["is_error"] as? Bool) == true ? true : nil, ref: b["tool_use_id"] as? String))
+            default: break
+            }
+        }
+        return out
+    }
+
+    /// The one line that says what a tool call was: the command, the file, the search.
+    private static func describe(_ tool: String, _ input: [String: Any]) -> String {
+        func s(_ k: String) -> String? { (input[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        switch tool {
+        case "Bash": return s("command") ?? ""
+        case "Read", "Write", "Edit", "MultiEdit", "NotebookEdit": return s("file_path") ?? s("notebook_path") ?? ""
+        case "Grep": return [s("pattern"), s("path").map { "in \($0)" }].compactMap { $0 }.joined(separator: " ")
+        case "Glob": return s("pattern") ?? ""
+        case "WebFetch": return s("url") ?? ""
+        case "WebSearch": return s("query") ?? ""
+        case "Task", "Agent": return s("description") ?? s("prompt") ?? ""
+        case "TodoWrite":
+            return (input["todos"] as? [[String: Any]] ?? []).compactMap { t in
+                (t["content"] as? String).map { "\(t["status"] as? String == "completed" ? "[x]" : "[ ]") \($0)" }
+            }.joined(separator: "\n")
+        default:
+            let d = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])) ?? Data()
+            return String(decoding: d, as: UTF8.self)
+        }
+    }
+
+    /// Same for Codex's `--json` events.
+    static func codexSteps(_ line: Data) -> [WorkStep] {
+        guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              let item = o["item"] as? [String: Any] else { return [] }
+        let started = o["type"] as? String == "item.started", done = o["type"] as? String == "item.completed"
+        switch item["type"] as? String {
+        case "command_execution":
+            if started { return [WorkStep(kind: .tool, title: "Shell", text: WorkStep.clip(item["command"] as? String ?? "", 600))] }
+            if done {
+                let out = item["aggregated_output"] as? String ?? ""
+                let code = item["exit_code"] as? Int
+                return [WorkStep(kind: .output, text: WorkStep.clip(out.isEmpty ? "(no output)" : out), failed: (code ?? 0) != 0 ? true : nil)]
+            }
+        case "file_change" where done:
+            let changes = (item["changes"] as? [[String: Any]] ?? []).map { "\($0["kind"] as? String ?? "edit") \($0["path"] as? String ?? "")" }
+            return [WorkStep(kind: .tool, title: "Edit", text: changes.joined(separator: "\n"))]
+        case "reasoning" where done:
+            if let t = item["text"] as? String, !t.isEmpty { return [WorkStep(kind: .thinking, text: WorkStep.clip(t))] }
+        case "agent_message" where done:
+            if let t = item["text"] as? String, !t.isEmpty { return [WorkStep(kind: .note, text: WorkStep.clip(t))] }
+        case "web_search" where done:
+            return [WorkStep(kind: .tool, title: "Web search", text: item["query"] as? String ?? "")]
+        case "mcp_tool_call" where started:
+            return [WorkStep(kind: .tool, title: "\(item["server"] as? String ?? "mcp") \(item["tool"] as? String ?? "")", text: "")]
+        default: break
+        }
+        return []
+    }
+
     private static func firstLine(_ s: String) -> String? {
         s.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
     }
@@ -317,4 +413,23 @@ private final class DataBox: @unchecked Sendable {
     private var buf = Data()
     func append(_ d: Data) { lock.lock(); buf.append(d); lock.unlock() }
     var data: Data { lock.lock(); defer { lock.unlock() }; return buf }
+}
+
+/// Collects streamed bytes and hands over each complete line as it arrives.
+private final class LineFeed: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buf = Data()
+    private let onLine: (Data) -> Void
+    init(_ onLine: @escaping (Data) -> Void) { self.onLine = onLine }
+    func append(_ d: Data) {
+        lock.lock()
+        buf.append(d)
+        var lines: [Data] = []
+        while let nl = buf.firstIndex(of: UInt8(ascii: "\n")) {
+            lines.append(buf[buf.startIndex..<nl])
+            buf.removeSubrange(buf.startIndex...nl)
+        }
+        lock.unlock()
+        for l in lines where !l.isEmpty { onLine(Data(l)) }
+    }
 }

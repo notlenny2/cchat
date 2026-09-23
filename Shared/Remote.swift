@@ -158,6 +158,8 @@ extension Conversation {
         c.messages = c.messages.map { m in
             var m = m
             m.attachments = m.attachments?.map { URL(fileURLWithPath: $0).lastPathComponent }
+            // The step-by-step work log stays on the Mac (it's big and full of file paths).
+            m.work = nil
             return m
         }
         return c

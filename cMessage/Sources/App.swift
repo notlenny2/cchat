@@ -65,6 +65,8 @@ struct CMessageApp: App {
                 Button("Smaller Text") { Zoom.step(-0.1) }.keyboardShortcut("-")
                 Button("Actual Size") { Zoom.reset() }.keyboardShortcut("0")
                 Divider()
+                Button("Show or Hide the Work") { ShowWork.toggle() }.keyboardShortcut("e", modifiers: [.command, .shift])
+                Divider()
             }
         }
     }

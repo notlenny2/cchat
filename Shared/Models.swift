@@ -40,7 +40,30 @@ struct Message: Identifiable, Codable, Hashable {
     var attachments: [String]? = nil
     /// Set when another agent sent this on the user's behalf, not the user. senderId is nil.
     var from: String? = nil
+    /// What the agent did on its way to this reply (tools it ran, their output), for View > Show the Work.
+    var work: [WorkStep]? = nil
     var isFromUser: Bool { senderId == nil && from == nil }
+}
+
+/// One thing an agent did during a turn, terminal style: a tool it ran (and what came back), or a thought.
+struct WorkStep: Codable, Hashable, Identifiable {
+    enum Kind: String, Codable { case tool, output, note, thinking }
+    var id = UUID()
+    var kind: Kind
+    /// Tool name for `.tool` ("Bash", "Read"...), empty otherwise.
+    var title: String = ""
+    var text: String
+    var failed: Bool? = nil
+    /// Ties a tool's output to the call it came from (Claude can run several at once).
+    var ref: String? = nil
+
+    /// Keeps store.json from ballooning: a long command output only needs its start and end.
+    static func clip(_ s: String, _ max: Int = 1500) -> String {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count > max else { return t }
+        return "\(t.prefix(max * 2 / 3))\n…\n\(t.suffix(max / 3))"
+    }
+    static let maxPerTurn = 300
 }
 
 /// Which AI runs the agents in a chat. Picked when the chat starts.

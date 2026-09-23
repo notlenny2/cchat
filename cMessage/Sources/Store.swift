@@ -11,6 +11,8 @@ final class Store: ObservableObject {
     @Published var typing: [UUID: UUID] = [:] { didSet { version += 1 } }
     /// conversationId -> who currently has that chat's project folder, while this chat waits its turn.
     @Published var waitingFor: [UUID: String] = [:] { didSet { version += 1 } }
+    /// conversationId -> what the agent answering right now has done so far this turn (View > Show the Work).
+    @Published var work: [UUID: [WorkStep]] = [:]
     /// Goes up on every change, so the iPhone/iPad app can ask "anything new since N?".
     private(set) var version = 0
 
@@ -708,6 +710,26 @@ final class Store: ObservableObject {
         }
         defer { Traffic.shared.give(ticket) }
 
+        work[convId] = []
+        defer { work[convId] = nil }
+        let onStep: @Sendable (WorkStep) -> Void = { [weak self] step in
+            // Main queue keeps the steps in the order they happened.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, var steps = self.work[convId], steps.count < WorkStep.maxPerTurn else { return }
+                    // An output goes right under the call it belongs to, not after whatever ran alongside it.
+                    if step.kind == .output, let r = step.ref, let at = steps.firstIndex(where: { $0.kind == .tool && $0.ref == r }) {
+                        var end = at + 1
+                        while end < steps.count, steps[end].kind == .output, steps[end].ref == r { end += 1 }
+                        steps.insert(step, at: end)
+                    } else {
+                        steps.append(step)
+                    }
+                    self.work[convId] = steps
+                }
+            }
+        }
+
         var session = conv.sessions[key]
         let fork = session != nil && (conv.forkNext ?? []).contains(key) && !conv.usesCodex
         do {
@@ -716,27 +738,30 @@ final class Store: ObservableObject {
                 let images = fresh.flatMap { $0.attachments ?? [] }.filter { !Media.isVideo($0) }
                 result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: session,
                                                          instructions: systemPrompt(for: agent, in: conv),
-                                                         fullAccess: agent.fullAccess, images: images, model: conv.model)
+                                                         fullAccess: agent.fullAccess, images: images, model: conv.model, onStep: onStep)
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("thread") {
                     Log.info("codex resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: nil,
                                                              instructions: systemPrompt(for: agent, in: conv),
-                                                             fullAccess: agent.fullAccess, images: images, model: conv.model)
+                                                             fullAccess: agent.fullAccess, images: images, model: conv.model, onStep: onStep)
                 }
             } else {
                 result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                    systemPrompt: systemPrompt(for: agent, in: conv),
-                                                   model: conv.model ?? agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path])
+                                                   model: conv.model ?? agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path], onStep: onStep)
                 // A resume can fail if the old session was cleaned up. Start fresh once rather than dying.
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("conversation") {
                     Log.info("resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
                                                        systemPrompt: systemPrompt(for: agent, in: conv),
-                                                       model: conv.model ?? agent.model, fullAccess: agent.fullAccess, extraDirs: [Store.attachmentsDir.path])
+                                                       model: conv.model ?? agent.model, fullAccess: agent.fullAccess, extraDirs: [Store.attachmentsDir.path], onStep: onStep)
                 }
             }
+            // Let the last few streamed steps land before they're filed with the reply.
+            await Task.yield()
+            let steps = finishedWork(convId, reply: result.text)
             guard let j = index(of: convId) else { return }
             if let sid = result.sessionId {
                 conversations[j].sessions[key] = sid
@@ -745,7 +770,9 @@ final class Store: ObservableObject {
             conversations[j].seenCount[key] = endIndex
 
             if result.isError {
-                conversations[j].messages.append(Message(senderId: agentId, text: result.text.isEmpty ? "Something went wrong on my end." : result.text, kind: .error))
+                var m = Message(senderId: agentId, text: result.text.isEmpty ? "Something went wrong on my end." : result.text, kind: .error)
+                m.work = steps
+                conversations[j].messages.append(m)
             } else {
                 let (parsed, next) = Self.parse(result.text)
                 let (withoutOpens, opens) = Self.extractOpens(parsed)
@@ -758,7 +785,9 @@ final class Store: ObservableObject {
                 let pass = conv.isGroup && media.isEmpty && body.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("PASS")
                 if pass { handOff(after: agentId, in: convId) }
                 if !pass && (!body.isEmpty || !media.isEmpty) {
-                    conversations[j].messages.append(Message(senderId: agentId, text: body, attachments: media.isEmpty ? nil : media))
+                    var m = Message(senderId: agentId, text: body, attachments: media.isEmpty ? nil : media)
+                    m.work = steps
+                    conversations[j].messages.append(m)
                     if !next.isEmpty { conversations[j].suggestions = next }
                     if selectedId != convId { conversations[j].unread = true }
                 }
@@ -793,6 +822,14 @@ final class Store: ObservableObject {
         }
         if typing[convId] == agentId { typing[convId] = nil }
         save()
+    }
+
+    /// This turn's steps, to keep with the reply. The reply itself streams out as the last remark, so that's dropped.
+    private func finishedWork(_ convId: UUID, reply: String) -> [WorkStep]? {
+        var steps = work[convId] ?? []
+        if let last = steps.last, last.kind == .note,
+           reply.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix(last.text.suffix(200)) { steps.removeLast() }
+        return steps.isEmpty ? nil : steps
     }
 
     /// No agent has answered the user's latest message yet.

@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var dropping = false
     @State private var photoDrop = false
     @FocusState private var focused: Bool
+    @AppStorage(ShowWork.key) private var showWork = false
 
     private var conv: Conversation? { store.index(of: convId).map { store.conversations[$0] } }
 
@@ -89,6 +90,11 @@ struct ChatView: View {
         }
         .overlay(alignment: .trailing) {
             HStack(spacing: 12) {
+                Button { showWork.toggle() } label: {
+                    Image(systemName: "apple.terminal").foregroundStyle(showWork ? Clay.terracotta : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(showWork ? "Hide the work (View > Show the Work)" : "Show the work agents do: commands, files, output")
                 if store.isBusy(convId) {
                     Button("Stop") { store.stop(convId) }
                         .buttonStyle(.borderless).foregroundStyle(.red)
@@ -140,6 +146,10 @@ struct ChatView: View {
                     if let t = store.typing[convId] {
                         TypingRow(contact: store.contact(t), isGroup: conv.isGroup,
                                   waitingFor: store.waitingFor[convId]).id("typing")
+                        if showWork, let steps = store.work[convId], !steps.isEmpty {
+                            WorkLog(steps: steps, live: true)
+                                .padding(.leading, conv.isGroup ? 36 : 0).padding(.trailing, 80).padding(.top, 4)
+                        }
                     }
                     Color.clear.frame(height: 6).id("bottom")
                 }
@@ -149,6 +159,7 @@ struct ChatView: View {
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: conv.messages.count) { _, _ in toBottom(proxy) }
             .onChange(of: store.typing[convId]) { _, _ in toBottom(proxy) }
+            .onChange(of: store.work[convId]?.count) { _, n in if showWork, n != nil { proxy.scrollTo("bottom", anchor: .bottom) } }
             // The chips appearing under a reply shrink the transcript, which left the end of a reply cut off.
             .onChange(of: conv.suggestions) { _, _ in toBottom(proxy) }
         }
@@ -267,6 +278,7 @@ struct MessageRow: View {
     var shortNames = false
     let firstInRun: Bool
     let lastInRun: Bool
+    @AppStorage(ShowWork.key) private var showWork = false
 
     private var mine: Bool { message.senderId == nil }
 
@@ -297,6 +309,10 @@ struct MessageRow: View {
                     }
                     .frame(maxWidth: 560 * zoom, alignment: mine ? .trailing : .leading)
                     if !mine { Spacer(minLength: 80) }
+                }
+                if showWork, !mine, let steps = message.work, !steps.isEmpty {
+                    WorkDisclosure(steps: steps)
+                        .padding(.leading, isGroup ? 48 : 12).padding(.trailing, 80).padding(.top, 2)
                 }
                 if message.kind == .error {
                     Label("Not Delivered", systemImage: "exclamationmark.circle.fill")
