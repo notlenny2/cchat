@@ -38,6 +38,9 @@ final class RemoteServer: ObservableObject {
         self.store = store
         key = try? Data(contentsOf: Self.keyURL)
         if key?.count != 32 { key = nil }
+        // Linking is on unless it was switched off: make a key the first time so there's a code ready to scan.
+        // Nobody gets in without that key; it only leaves this Mac inside the QR code.
+        if key == nil && Prefs.phoneLink { newPairing(); return }
         if key != nil || !clientKeys().isEmpty { start() }
     }
 
@@ -49,6 +52,7 @@ final class RemoteServer: ObservableObject {
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.keyURL.path)
             key = k
             seenNonces = [:]
+            Prefs.phoneLink = true
             Log.info("remote: new pairing key")
             start()
         } catch { Log.error("remote: couldn't save key: \(error)") }
@@ -57,6 +61,7 @@ final class RemoteServer: ObservableObject {
     func unpair() {
         try? FileManager.default.removeItem(at: Self.keyURL)
         key = nil
+        Prefs.phoneLink = false
         listener?.cancel(); listener = nil; running = false
         Log.info("remote: unpaired, server off")
     }

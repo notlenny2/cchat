@@ -56,6 +56,12 @@ enum Prefs {
         return p.hasPrefix(home) ? "~" + p.dropFirst(home.count) : p
     }
 
+    /// iPhone/iPad linking is switched on (the default). Off = the Mac doesn't listen on the network at all.
+    static var phoneLink: Bool {
+        get { d.object(forKey: "phoneLink") as? Bool ?? true }
+        set { d.set(newValue, forKey: "phoneLink") }
+    }
+
     /// The welcome screen has been finished. A personal build never shows it.
     static var setupDone: Bool {
         get { Flavor.personal || d.bool(forKey: "setupDone") }

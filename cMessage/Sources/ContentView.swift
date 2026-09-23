@@ -88,10 +88,8 @@ struct ContentView: View {
         .searchable(text: $search, placement: .sidebar, prompt: "Search")
         .toolbar {
             ToolbarItemGroup {
-                if Flavor.personal {
-                    Button { showPairing = true } label: { Image(systemName: "iphone") }
-                        .help("Connect iPhone or iPad")
-                }
+                Button { showPairing = true } label: { Image(systemName: "iphone") }
+                    .help("Connect iPhone or iPad")
                 Button { showContacts = true } label: { Image(systemName: "person.crop.circle") }
                     .help("Contacts")
                 Button { showNew = true } label: { Image(systemName: "square.and.pencil") }

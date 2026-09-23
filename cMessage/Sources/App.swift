@@ -33,12 +33,9 @@ struct CMessageApp: App {
                 .onAppear {
                     Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
-                    // The phone link and self-install are personal-build only: there's no public iPhone app to link, and
-                    // self-install rebuilds from his own source folder.
-                    if Flavor.personal {
-                        RemoteServer.shared.attach(store)
-                        SelfUpdate.start(store)
-                    }
+                    RemoteServer.shared.attach(store)
+                    // Self-install rebuilds from the personal build's own source folder, so it's personal-build only.
+                    if Flavor.personal { SelfUpdate.start(store) }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
                     WindowRescue.run()
@@ -58,10 +55,8 @@ struct CMessageApp: App {
                     .keyboardShortcut("k")
                 Button("Show or Hide Terminal") { TerminalPool.shared.toggle() }
                     .keyboardShortcut("`", modifiers: .control)
-                if Flavor.personal {
-                    Divider()
-                    Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
-                }
+                Divider()
+                Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
             }
         }
     }

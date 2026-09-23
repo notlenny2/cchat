@@ -88,6 +88,7 @@ struct SetupView: View {
     @State private var folder = Prefs.projectsRoot
     @State private var claude: ToolState = .checking
     @State private var codex: ToolState = .checking
+    @State private var phoneLink = Prefs.phoneLink
 
     private var welcome: Bool { onDone != nil }
 
@@ -140,6 +141,22 @@ struct SetupView: View {
                 }
                 Text("Every folder in here can be texted. New projects you start from cChat go here too.")
                     .font(.caption).foregroundStyle(Clay.inkSoft)
+            }
+
+            if !welcome {
+                row("5", "iPhone and iPad") {
+                    Toggle("Let my iPhone or iPad link to this Mac", isOn: Binding(
+                        get: { phoneLink },
+                        set: { on in
+                            phoneLink = on
+                            if on { RemoteServer.shared.newPairing() } else { RemoteServer.shared.unpair() }
+                        }))
+                    if phoneLink {
+                        Button("Show Code to Scan") { NotificationCenter.default.post(name: .showPairing, object: nil) }
+                    }
+                    Text("Works on the same Wi-Fi. Only a device that scanned your code can get in. Switching this off unlinks every device.")
+                        .font(.caption).foregroundStyle(Clay.inkSoft)
+                }
             }
 
             HStack {
