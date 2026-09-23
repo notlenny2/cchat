@@ -36,8 +36,10 @@ final class Store: ObservableObject {
         load(); flagUnanswered(); findMissingIcons()
         ClaudeRunner.onUsage = { u in Task { @MainActor [weak self] in self?.setUsage(claude: u) } }
         refreshCodexUsage()
+        Task.detached(priority: .utility) { Backups.takeIfDue() }
         usageTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshCodexUsage() }
+            Task.detached(priority: .utility) { Backups.takeIfDue() }
         }
     }
 
