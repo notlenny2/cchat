@@ -69,31 +69,64 @@ enum Media {
     }
 }
 
-/// A picture or video inside a message bubble. Videos show their first frame and play in place.
+/// Plays a chat video in its own plain AppKit window. SwiftUI's VideoPlayer inside the chat crashed the app
+/// (an endless "update constraints" loop between it and the chat's layout, 0.1.2), so the player never sits in
+/// the SwiftUI tree at all.
+@MainActor
+enum VideoWindow {
+    private static var window: NSWindow?
+
+    static func play(_ path: String) {
+        let player = AVPlayer(url: URL(fileURLWithPath: path))
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .floating
+        let size = videoSize(path)
+        let w = window ?? {
+            let w = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                             backing: .buffered, defer: false)
+            w.isReleasedWhenClosed = false
+            window = w
+            return w
+        }()
+        (w.contentView as? AVPlayerView)?.player?.pause()
+        w.contentView = view
+        w.title = URL(fileURLWithPath: path).lastPathComponent
+        w.setContentSize(size)
+        w.contentAspectRatio = size
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        player.play()
+    }
+
+    /// The video's own shape, scaled to fit comfortably on screen.
+    private static func videoSize(_ path: String) -> NSSize {
+        let track = AVURLAsset(url: URL(fileURLWithPath: path)).tracks(withMediaType: .video).first
+        var s = track.map { $0.naturalSize.applying($0.preferredTransform) } ?? CGSize(width: 16, height: 9)
+        s = CGSize(width: abs(s.width), height: abs(s.height))
+        let k = min(960 / max(s.width, 1), 640 / max(s.height, 1))
+        return NSSize(width: s.width * k, height: s.height * k)
+    }
+}
+
+/// A picture or video inside a message bubble. Videos show their first frame; clicking plays it in a player window.
 struct MediaView: View {
     let path: String
-    @State private var player: AVPlayer?
     @State private var poster: NSImage?
 
     var body: some View {
         Group {
             if Media.isVideo(path) {
                 ZStack {
-                    if let player {
-                        VideoPlayer(player: player)
-                    } else {
-                        if let poster { Image(nsImage: poster).resizable().scaledToFit() }
-                        else { Color.black }
-                        Image(systemName: "play.circle.fill").font(.system(size: 44)).foregroundStyle(.white.opacity(0.9))
-                            .shadow(radius: 4)
-                    }
+                    if let poster { Image(nsImage: poster).resizable().scaledToFit() }
+                    else { Color.black }
+                    Image(systemName: "play.circle.fill").font(.system(size: 44)).foregroundStyle(.white.opacity(0.9))
+                        .shadow(radius: 4)
                 }
                 .frame(width: 320, height: 200)
                 .background(Color.black)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    if player == nil { let p = AVPlayer(url: URL(fileURLWithPath: path)); player = p; p.play() }
-                }
+                .onTapGesture { VideoWindow.play(path) }
                 .task { if poster == nil { poster = Media.poster(path) } }
             } else if let img = IconCache.image(path) {
                 // Sized exactly to the picture: a 320x320 box centered a narrow one, so it sat indented from the bubbles.
