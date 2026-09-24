@@ -101,6 +101,9 @@ struct RPCRequest: Codable {
     var wait: Bool? = nil
     /// `team`: which team members to call in, by name.
     var names: [String]? = nil
+    /// `send`: pictures from the phone's camera or photo library, as JPEG.
+    var images: [Data]? = nil
+    static let maxImages = 6
 }
 
 struct RPCResponse: Codable {

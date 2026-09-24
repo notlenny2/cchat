@@ -1,11 +1,18 @@
 import SwiftUI
 import AVKit
+import PhotosUI
 
 struct ChatView: View {
     @EnvironmentObject var client: RemoteClient
     let convId: UUID
     @State private var draft = ""
     @State private var scrolledUp = false
+    /// Pictures picked from the camera or library, waiting above the text box until you send.
+    @State private var pictures: [PickedPicture] = []
+    @State private var libraryPicks: [PhotosPickerItem] = []
+    @State private var showLibrary = false
+    @State private var showCamera = false
+    @State private var sending = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -127,7 +134,39 @@ struct ChatView: View {
                     .padding(.horizontal, 14)
                 }
             }
+            if !pictures.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(pictures) { p in
+                            Image(uiImage: p.image).resizable().scaledToFill()
+                                .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(alignment: .topTrailing) {
+                                    Button { pictures.removeAll { $0.id == p.id } } label: {
+                                        Image(systemName: "xmark.circle.fill").font(.system(size: 20))
+                                            .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.55))
+                                    }
+                                    .padding(3)
+                                    .accessibilityLabel("Remove picture")
+                                }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                }
+            }
             HStack(alignment: .bottom, spacing: 8) {
+                Menu {
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
+                    }
+                    Button { showLibrary = true } label: { Label("Choose from Library", systemImage: "photo.on.rectangle") }
+                } label: {
+                    Image(systemName: "camera.fill").font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Clay.inkSoft)
+                        .frame(width: 38, height: 38)
+                        .background(ClaySurface(shape: Circle(), color: Clay.cream, depth: 0.6))
+                }
+                .accessibilityLabel("Add a picture")
+                .disabled(pictures.count >= RPCRequest.maxImages)
                 TextField("cChat", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .focused($focused)
@@ -137,23 +176,93 @@ struct ChatView: View {
                             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
                                 .stroke(LinearGradient(colors: [Clay.shadow.opacity(0.22), .white.opacity(0.6)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5))
                     )
-                Button {
-                    let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !t.isEmpty else { return }
-                    draft = ""
-                    client.send(t, in: convId)
-                } label: {
-                    let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    Image(systemName: "arrow.up").font(.system(size: 16, weight: .heavy, design: .rounded))
+                Button(action: sendNow) {
+                    let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pictures.isEmpty
+                    Group {
+                        if sending { ProgressView().tint(.white) }
+                        else { Image(systemName: "arrow.up").font(.system(size: 16, weight: .heavy, design: .rounded)) }
+                    }
                         .foregroundStyle(.white.opacity(empty ? 0.7 : 1))
                         .frame(width: 38, height: 38)
                         .background(ClaySurface(shape: Circle(), color: empty ? Clay.inkSoft.opacity(0.45) : Clay.terracotta, depth: empty ? 0.4 : 1))
                 }
+                .disabled(sending)
             }
             .padding(.horizontal, 12)
         }
+        .photosPicker(isPresented: $showLibrary, selection: $libraryPicks,
+                      maxSelectionCount: max(1, RPCRequest.maxImages - pictures.count), matching: .images)
+        .onChange(of: libraryPicks) { _, items in
+            guard !items.isEmpty else { return }
+            libraryPicks = []
+            Task {
+                for item in items {
+                    if let d = try? await item.loadTransferable(type: Data.self), let img = UIImage(data: d),
+                       pictures.count < RPCRequest.maxImages {
+                        pictures.append(PickedPicture(image: img))
+                    }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { img in if pictures.count < RPCRequest.maxImages { pictures.append(PickedPicture(image: img)) } }
+                .ignoresSafeArea()
+        }
         .padding(.vertical, 8)
         .background(Clay.sidebar.opacity(0.6))
+    }
+}
+
+extension ChatView {
+    private func sendNow() {
+        let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if pictures.isEmpty {
+            guard !t.isEmpty else { return }
+            draft = ""
+            client.send(t, in: convId)
+            return
+        }
+        // With pictures, wait for the Mac to take them; if it can't, they stay here to try again.
+        let sent = pictures
+        sending = true
+        Task {
+            let ok = await client.send(t, pictures: sent.map(\.image), in: convId)
+            sending = false
+            if ok {
+                pictures.removeAll { p in sent.contains { $0.id == p.id } }
+                if draft.trimmingCharacters(in: .whitespacesAndNewlines) == t { draft = "" }
+            }
+        }
+    }
+}
+
+struct PickedPicture: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
+/// The system camera, for "Take Photo". Hands back the picture and closes.
+struct CameraPicker: UIViewControllerRepresentable {
+    let onPick: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let c = UIImagePickerController()
+        c.sourceType = .camera
+        c.delegate = context.coordinator
+        return c
+    }
+    func updateUIViewController(_ c: UIImagePickerController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraPicker
+        init(_ p: CameraPicker) { parent = p }
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let img = info[.originalImage] as? UIImage { parent.onPick(img) }
+            parent.dismiss()
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
     }
 }
 

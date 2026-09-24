@@ -138,6 +138,9 @@ final class RemoteServer: ObservableObject {
         receive(conn, peer: peer, buffer: Data())
     }
 
+    /// Room for a few phone pictures (each scaled to ~2000px JPEG on the phone) plus sealing overhead.
+    static let maxRequest = 24 * 1024 * 1024
+
     /// Reads one small HTTP request (headers + Content-Length body), handles it, answers, closes.
     private func receive(_ conn: NWConnection, peer: String, buffer: Data) {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, done, error in
@@ -145,7 +148,7 @@ final class RemoteServer: ObservableObject {
                 guard let self else { return }
                 var buf = buffer
                 if let data { buf.append(data) }
-                if buf.count > 2 * 1024 * 1024 || error != nil { conn.cancel(); return }
+                if buf.count > Self.maxRequest || error != nil { conn.cancel(); return }
                 guard let headerEnd = buf.range(of: Data("\r\n\r\n".utf8)) else {
                     if done { conn.cancel() } else { self.receive(conn, peer: peer, buffer: buf) }
                     return
@@ -215,7 +218,12 @@ final class RemoteServer: ObservableObject {
             res.snapshot = snapshot(store)
         case .send:
             // An agent's key can only ever send as that agent, never as the user.
-            if let c = req.conv, let t = req.text { store.send(t, in: c, from: client) } else { res.ok = false }
+            guard let c = req.conv else { res.ok = false; break }
+            // Pictures go through the same import as a drop on the Mac: anything that isn't a readable image is refused.
+            let pics = (req.images ?? []).prefix(RPCRequest.maxImages)
+                .compactMap { Store.importImage(data: $0, into: Store.attachmentsDir) }
+            if !(req.images ?? []).isEmpty && pics.isEmpty { res.ok = false; res.error = "Couldn't read those pictures."; break }
+            store.send(req.text ?? "", in: c, attachments: pics, from: client)
         case .ask:
             guard let t = req.text, !t.isEmpty else { res.ok = false; res.error = "Nothing to send."; break }
             guard let convId = req.conv ?? req.to.flatMap(store.findChat) else {

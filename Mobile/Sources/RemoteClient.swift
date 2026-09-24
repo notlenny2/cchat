@@ -97,6 +97,27 @@ final class RemoteClient: ObservableObject {
     // MARK: Actions
 
     func send(_ text: String, in conv: UUID) { fire(RPCRequest(op: .send, conv: conv, text: text)) }
+
+    /// Sends pictures (and an optional note). Waits for the Mac so the composer can keep them if it fails.
+    func send(_ text: String, pictures: [UIImage], in conv: UUID) async -> Bool {
+        let jpegs = pictures.prefix(RPCRequest.maxImages).compactMap { Self.jpeg($0) }
+        guard !jpegs.isEmpty else { return false }
+        var req = RPCRequest(op: .send, conv: conv, text: text)
+        req.images = jpegs
+        do { return try await call(req).ok }
+        catch { link = .offline(Self.describe(error)); return false }
+    }
+
+    /// Longest side 2048px, JPEG: a 12MP photo goes from ~5 MB to a few hundred KB, still plenty for an agent to read.
+    static func jpeg(_ img: UIImage, maxSide: CGFloat = 2048) -> Data? {
+        let s = img.size
+        let scale = min(1, maxSide / max(s.width, s.height, 1))
+        let size = CGSize(width: (s.width * scale).rounded(), height: (s.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let out = UIGraphicsImageRenderer(size: size, format: format).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
+        return out.jpegData(compressionQuality: 0.8)
+    }
     func rename(_ conv: UUID, to name: String) { fire(RPCRequest(op: .rename, conv: conv, text: name)) }
     func togglePin(_ conv: UUID) { fire(RPCRequest(op: .pin, conv: conv)) }
     func stopReply(_ conv: UUID) { fire(RPCRequest(op: .stop, conv: conv)) }
@@ -172,7 +193,7 @@ final class RemoteClient: ObservableObject {
         r.httpMethod = "POST"
         r.httpBody = try Seal.close(req, key: p.key)
         r.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        if req.op != .sync { r.timeoutInterval = req.op == .media ? 180 : 15 }
+        if req.op != .sync { r.timeoutInterval = req.op == .media || req.images != nil ? 180 : 15 }
         let (data, resp) = try await session.data(for: r)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 { throw ClientError.rejected }

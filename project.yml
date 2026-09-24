@@ -63,7 +63,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        NSCameraUsageDescription: "Scan the code on your Mac to link cChat."
+        NSCameraUsageDescription: "Scan the code on your Mac to link cChat, and take pictures to send to your agents."
         NSLocalNetworkUsageDescription: "cChat talks to your Mac on your Wi-Fi, where your agents run."
         NSBonjourServices: ["_cmessage._tcp"]
         NSAppTransportSecurity:
