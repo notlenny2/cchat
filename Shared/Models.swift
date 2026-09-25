@@ -47,7 +47,8 @@ struct Message: Identifiable, Codable, Hashable {
 
 /// One thing an agent did during a turn, terminal style: a tool it ran (and what came back), or a thought.
 struct WorkStep: Codable, Hashable, Identifiable {
-    enum Kind: String, Codable { case tool, output, note, thinking }
+    /// `info` = the bookkeeping lines Claude Code's verbose mode prints: session start, hooks, the end-of-turn tally.
+    enum Kind: String, Codable { case tool, output, note, thinking, info }
     var id = UUID()
     var kind: Kind
     /// Tool name for `.tool` ("Bash", "Read"...), empty otherwise.
@@ -56,9 +57,11 @@ struct WorkStep: Codable, Hashable, Identifiable {
     var failed: Bool? = nil
     /// Ties a tool's output to the call it came from (Claude can run several at once).
     var ref: String? = nil
+    /// Done by a helper agent the main one sent off (Task/Agent), shown indented under it.
+    var sub: Bool? = nil
 
     /// Keeps store.json from ballooning: a long command output only needs its start and end.
-    static func clip(_ s: String, _ max: Int = 1500) -> String {
+    static func clip(_ s: String, _ max: Int = 5000) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard t.count > max else { return t }
         return "\(t.prefix(max * 2 / 3))\n…\n\(t.suffix(max / 3))"

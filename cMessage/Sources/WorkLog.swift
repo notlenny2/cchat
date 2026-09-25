@@ -22,7 +22,7 @@ struct WorkLog: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxHeight: (live ? 240 : 380) * zoom)
+            .frame(maxHeight: (live ? 280 : 520) * zoom)
             .fixedSize(horizontal: false, vertical: true)
             .onAppear { if live, let last = steps.last { proxy.scrollTo(last.id, anchor: .bottom) } }
             .onChange(of: steps.count) { _, _ in
@@ -37,26 +37,56 @@ struct WorkLog: View {
 
     private var mono: Font { .system(size: 11 * zoom, design: .monospaced) }
 
+    private static let red = Color(red: 1, green: 0.5, blue: 0.45), green = Color(red: 0.55, green: 0.85, blue: 0.55)
+
     @ViewBuilder private func row(_ s: WorkStep) -> some View {
-        switch s.kind {
-        case .tool:
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(s.title).font(mono.weight(.bold)).foregroundStyle(Color(red: 0.96, green: 0.62, blue: 0.42))
-                Text(s.title == "Bash" || s.title == "Shell" ? "$ \(s.text)" : s.text)
-                    .font(mono).foregroundStyle(.white.opacity(0.92))
-            }
-            .padding(.top, 3)
-        case .output:
-            Text(s.text).font(mono).lineLimit(live ? 8 : 40)
-                .foregroundStyle(s.failed == true ? Color(red: 1, green: 0.5, blue: 0.45) : .white.opacity(0.55))
-                .padding(.leading, 12)
-        case .note:
-            Text(s.text).font(.system(size: 12 * zoom, design: .rounded)).foregroundStyle(.white.opacity(0.85))
+        Group {
+            switch s.kind {
+            case .tool:
+                let lines = s.text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(s.title).font(mono.weight(.bold)).foregroundStyle(Color(red: 0.96, green: 0.62, blue: 0.42))
+                        Text((s.title == "Bash" || s.title == "Shell" ? "$ " : "") + String(lines.first ?? ""))
+                            .font(mono).foregroundStyle(.white.opacity(0.92))
+                    }
+                    if lines.count > 1 { detail(String(lines[1])) }
+                }
                 .padding(.top, 3)
-        case .thinking:
-            Text(s.text).font(.system(size: 11.5 * zoom, design: .rounded).italic()).lineLimit(live ? 6 : 30)
-                .foregroundStyle(.white.opacity(0.45))
+            case .output:
+                Text(s.text).font(mono).lineLimit(live ? 12 : nil)
+                    .foregroundStyle(s.failed == true ? Self.red : .white.opacity(0.55))
+                    .padding(.leading, 12)
+            case .note:
+                Text(s.text).font(.system(size: 12 * zoom, design: .rounded)).foregroundStyle(.white.opacity(0.85))
+                    .padding(.top, 3)
+            case .thinking:
+                Text(s.text).font(.system(size: 11.5 * zoom, design: .rounded).italic()).lineLimit(live ? 8 : nil)
+                    .foregroundStyle(.white.opacity(0.45))
+            case .info:
+                Text(s.text).font(.system(size: 10.5 * zoom, design: .monospaced)).lineLimit(live ? 3 : 12)
+                    .foregroundStyle(s.failed == true ? Self.red : .white.opacity(0.38))
+                    .padding(.vertical, 2)
+            }
         }
+        // A helper agent's steps sit under the call that sent it, behind a thin rule.
+        .padding(.leading, s.sub == true ? 12 : 0)
+        .overlay(alignment: .leading) {
+            if s.sub == true { Rectangle().fill(.white.opacity(0.15)).frame(width: 1.5).padding(.leading, 3) }
+        }
+    }
+
+    /// The rest of a tool call: an edit's before/after in red and green, a command's description, a helper's orders.
+    private func detail(_ text: String) -> some View {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).prefix(live ? 14 : 400)
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
+                Text(l.isEmpty ? " " : String(l)).font(mono)
+                    .foregroundStyle(l.hasPrefix("- ") || l == "-" ? Self.red : l.hasPrefix("+ ") || l == "+" ? Self.green
+                                     : l.hasPrefix("#") ? .white.opacity(0.4) : .white.opacity(0.7))
+            }
+        }
+        .padding(.leading, 12)
     }
 }
 

@@ -716,7 +716,7 @@ final class Store: ObservableObject {
             // Main queue keeps the steps in the order they happened.
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self, var steps = self.work[convId], steps.count < WorkStep.maxPerTurn else { return }
+                    guard let self, var steps = self.work[convId], steps.count < WorkStep.maxPerTurn || step.kind == .info else { return }
                     // An output goes right under the call it belongs to, not after whatever ran alongside it.
                     if step.kind == .output, let r = step.ref, let at = steps.firstIndex(where: { $0.kind == .tool && $0.ref == r }) {
                         var end = at + 1
@@ -827,8 +827,9 @@ final class Store: ObservableObject {
     /// This turn's steps, to keep with the reply. The reply itself streams out as the last remark, so that's dropped.
     private func finishedWork(_ convId: UUID, reply: String) -> [WorkStep]? {
         var steps = work[convId] ?? []
-        if let last = steps.last, last.kind == .note,
-           reply.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix(last.text.suffix(200)) { steps.removeLast() }
+        // The end-of-turn tally lands after it, so look back past info lines.
+        if let at = steps.lastIndex(where: { $0.kind != .info }), steps[at].kind == .note,
+           reply.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix(steps[at].text.suffix(200)) { steps.remove(at: at) }
         return steps.isEmpty ? nil : steps
     }
 

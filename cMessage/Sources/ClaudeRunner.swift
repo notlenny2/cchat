@@ -324,21 +324,42 @@ enum ClaudeRunner {
     /// Turns one line of Claude Code's stream into steps: tools it called, what they returned, its thinking and
     /// in-between remarks.
     static func claudeSteps(_ line: Data) -> [WorkStep] {
-        guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              let msg = o["message"] as? [String: Any], let blocks = msg["content"] as? [[String: Any]] else { return [] }
+        guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return [] }
+        switch (o["type"] as? String, o["subtype"] as? String) {
+        case ("system", "init"):
+            let bits = [(o["claude_code_version"] as? String).map { "Claude Code \($0)" }, o["model"] as? String,
+                        o["permissionMode"] as? String, (o["session_id"] as? String).map { "session \($0.prefix(8))" },
+                        (o["mcp_servers"] as? [Any]).map { "\($0.count) MCP servers" }].compactMap { $0 }
+            return [WorkStep(kind: .info, text: bits.joined(separator: " · "))]
+        case ("system", "hook_response"):
+            let said = ((o["output"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let head = "\(o["hook_name"] as? String ?? "hook") hook \(o["outcome"] as? String ?? "ran")"
+            return [WorkStep(kind: .info, text: WorkStep.clip(said.isEmpty ? head : "\(head): \(said)", 1200),
+                             failed: (o["exit_code"] as? Int ?? 0) != 0 ? true : nil)]
+        case ("system", "compact_boundary"):
+            return [WorkStep(kind: .info, text: "Conversation compacted")]
+        case ("result", _):
+            return [WorkStep(kind: .info, text: tally(o), failed: (o["is_error"] as? Bool) == true ? true : nil)]
+        default: break
+        }
+        guard let msg = o["message"] as? [String: Any], let blocks = msg["content"] as? [[String: Any]] else { return [] }
+        // Steps taken by a helper agent carry the id of the Task/Agent call that started it.
+        let sub: Bool? = (o["parent_tool_use_id"] as? String) != nil ? true : nil
         var out: [WorkStep] = []
         for b in blocks {
             switch (o["type"] as? String, b["type"] as? String) {
             case ("assistant", "tool_use"):
                 let name = b["name"] as? String ?? "Tool"
-                out.append(WorkStep(kind: .tool, title: name, text: WorkStep.clip(describe(name, b["input"] as? [String: Any] ?? [:]), 600),
-                                    ref: b["id"] as? String))
+                out.append(WorkStep(kind: .tool, title: name, text: WorkStep.clip(describe(name, b["input"] as? [String: Any] ?? [:]), 4000),
+                                    ref: b["id"] as? String, sub: sub))
             case ("assistant", "text"):
                 if let t = b["text"] as? String, !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    out.append(WorkStep(kind: .note, text: WorkStep.clip(t)))
+                    out.append(WorkStep(kind: .note, text: WorkStep.clip(t), sub: sub))
                 }
             case ("assistant", "thinking"):
-                if let t = b["thinking"] as? String, !t.isEmpty { out.append(WorkStep(kind: .thinking, text: WorkStep.clip(t))) }
+                if let t = b["thinking"] as? String, !t.isEmpty { out.append(WorkStep(kind: .thinking, text: WorkStep.clip(t), sub: sub)) }
+            case ("assistant", "redacted_thinking"):
+                out.append(WorkStep(kind: .thinking, text: "(thinking hidden)", sub: sub))
             case ("user", "tool_result"):
                 var text = ""
                 if let s = b["content"] as? String { text = s }
@@ -346,42 +367,112 @@ enum ClaudeRunner {
                     text = parts.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : "[picture]" }.joined(separator: "\n")
                 }
                 out.append(WorkStep(kind: .output, text: WorkStep.clip(text.isEmpty ? "(no output)" : text),
-                                    failed: (b["is_error"] as? Bool) == true ? true : nil, ref: b["tool_use_id"] as? String))
+                                    failed: (b["is_error"] as? Bool) == true ? true : nil, ref: b["tool_use_id"] as? String, sub: sub))
             default: break
             }
         }
         return out
     }
 
-    /// The one line that says what a tool call was: the command, the file, the search.
+    /// The end-of-turn line: how long, how many round trips, tokens in and out, what it cost.
+    private static func tally(_ o: [String: Any]) -> String {
+        var bits: [String] = []
+        if let ms = o["duration_ms"] as? Double { bits.append(String(format: "Done in %.1fs", ms / 1000)) }
+        if let n = o["num_turns"] as? Int { bits.append("\(n) turn\(n == 1 ? "" : "s")") }
+        if let u = o["usage"] as? [String: Any] {
+            func n(_ k: String) -> Int { u[k] as? Int ?? 0 }
+            let cached = n("cache_read_input_tokens")
+            let input = n("input_tokens") + n("cache_creation_input_tokens") + cached
+            bits.append("\(tokens(input)) in" + (cached > 0 ? " (\(tokens(cached)) cached)" : ""))
+            bits.append("\(tokens(n("output_tokens"))) out")
+        }
+        if let c = o["total_cost_usd"] as? Double { bits.append(String(format: "$%.3f", c)) }
+        if let r = o["terminal_reason"] as? String, r != "completed" { bits.append(r) }
+        return bits.isEmpty ? "Done" : bits.joined(separator: " · ")
+    }
+
+    private static func tokens(_ n: Int) -> String {
+        n >= 1_000_000 ? String(format: "%.1fM", Double(n) / 1e6) : n >= 1000 ? String(format: "%.1fk", Double(n) / 1e3) : "\(n)"
+    }
+
+    /// What a tool call was, in full, the way verbose mode shows it: the command (with its description), the edit as
+    /// a before/after, the file written, every search option.
     private static func describe(_ tool: String, _ input: [String: Any]) -> String {
         func s(_ k: String) -> String? { (input[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        func diff(_ old: String, _ new: String) -> String {
+            (old.split(separator: "\n", omittingEmptySubsequences: false).map { "- \($0)" }
+             + new.split(separator: "\n", omittingEmptySubsequences: false).map { "+ \($0)" }).joined(separator: "\n")
+        }
         switch tool {
-        case "Bash": return s("command") ?? ""
-        case "Read", "Write", "Edit", "MultiEdit", "NotebookEdit": return s("file_path") ?? s("notebook_path") ?? ""
-        case "Grep": return [s("pattern"), s("path").map { "in \($0)" }].compactMap { $0 }.joined(separator: " ")
-        case "Glob": return s("pattern") ?? ""
-        case "WebFetch": return s("url") ?? ""
+        case "Bash":
+            var t = s("command") ?? ""
+            if let d = s("description") { t += "\n# \(d)" }
+            if input["run_in_background"] as? Bool == true { t += "\n# in the background" }
+            return t
+        case "Read":
+            var t = s("file_path") ?? ""
+            if let off = input["offset"] as? Int { t += " from line \(off)" }
+            if let lim = input["limit"] as? Int { t += ", \(lim) lines" }
+            if let p = s("pages") { t += " pages \(p)" }
+            return t
+        case "Edit":
+            return [s("file_path") ?? "", input["replace_all"] as? Bool == true ? "(every match)" : nil,
+                    diff(s("old_string") ?? "", s("new_string") ?? "")].compactMap { $0 }.joined(separator: "\n")
+        case "MultiEdit":
+            let edits = (input["edits"] as? [[String: Any]] ?? []).map { diff($0["old_string"] as? String ?? "", $0["new_string"] as? String ?? "") }
+            return ([s("file_path") ?? ""] + edits).joined(separator: "\n")
+        case "Write":
+            return "\(s("file_path") ?? "")\n" + (s("content") ?? "").split(separator: "\n", omittingEmptySubsequences: false)
+                .map { "+ \($0)" }.joined(separator: "\n")
+        case "NotebookEdit":
+            return [s("notebook_path"), s("edit_mode"), s("cell_id").map { "cell \($0)" }, s("new_source")].compactMap { $0 }.joined(separator: "\n")
+        case "Grep":
+            var t = [s("pattern"), s("path").map { "in \($0)" }].compactMap { $0 }.joined(separator: " ")
+            let opts = ["glob", "type", "output_mode"].compactMap { k in s(k).map { "\(k)=\($0)" } }
+                + ["-i", "-n", "multiline"].filter { input[$0] as? Bool == true }
+                + ["-A", "-B", "-C", "head_limit"].compactMap { k in (input[k] as? Int).map { "\(k)=\($0)" } }
+            if !opts.isEmpty { t += "  (" + opts.joined(separator: " ") + ")" }
+            return t
+        case "Glob": return [s("pattern"), s("path").map { "in \($0)" }].compactMap { $0 }.joined(separator: " ")
+        case "WebFetch": return [s("url"), s("prompt")].compactMap { $0 }.joined(separator: "\n")
         case "WebSearch": return s("query") ?? ""
-        case "Task", "Agent": return s("description") ?? s("prompt") ?? ""
+        case "Task", "Agent":
+            return [s("description"), s("subagent_type").map { "(\($0))" }, s("prompt")].compactMap { $0 }.joined(separator: "\n")
         case "TodoWrite":
             return (input["todos"] as? [[String: Any]] ?? []).compactMap { t in
-                (t["content"] as? String).map { "\(t["status"] as? String == "completed" ? "[x]" : "[ ]") \($0)" }
+                (t["content"] as? String).map { c in
+                    let box = ["completed": "[x]", "in_progress": "[~]"][t["status"] as? String ?? ""] ?? "[ ]"
+                    return "\(box) \(c)"
+                }
             }.joined(separator: "\n")
         default:
-            let d = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])) ?? Data()
+            let d = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])) ?? Data()
             return String(decoding: d, as: UTF8.self)
         }
     }
 
     /// Same for Codex's `--json` events.
     static func codexSteps(_ line: Data) -> [WorkStep] {
-        guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              let item = o["item"] as? [String: Any] else { return [] }
+        guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return [] }
+        switch o["type"] as? String {
+        case "thread.started":
+            return [WorkStep(kind: .info, text: "Codex session \((o["thread_id"] as? String ?? "").prefix(8))")]
+        case "turn.completed":
+            let u = o["usage"] as? [String: Any] ?? [:]
+            func n(_ k: String) -> Int { u[k] as? Int ?? 0 }
+            let cached = n("cached_input_tokens")
+            return [WorkStep(kind: .info, text: "Done · \(tokens(n("input_tokens"))) in" + (cached > 0 ? " (\(tokens(cached)) cached)" : "")
+                             + " · \(tokens(n("output_tokens"))) out")]
+        case "turn.failed", "error":
+            let msg = (o["message"] as? String) ?? ((o["error"] as? [String: Any])?["message"] as? String) ?? "Codex hit an error."
+            return [WorkStep(kind: .info, text: msg, failed: true)]
+        default: break
+        }
+        guard let item = o["item"] as? [String: Any] else { return [] }
         let started = o["type"] as? String == "item.started", done = o["type"] as? String == "item.completed"
         switch item["type"] as? String {
         case "command_execution":
-            if started { return [WorkStep(kind: .tool, title: "Shell", text: WorkStep.clip(item["command"] as? String ?? "", 600))] }
+            if started { return [WorkStep(kind: .tool, title: "Shell", text: WorkStep.clip(item["command"] as? String ?? "", 4000))] }
             if done {
                 let out = item["aggregated_output"] as? String ?? ""
                 let code = item["exit_code"] as? Int
@@ -397,7 +488,12 @@ enum ClaudeRunner {
         case "web_search" where done:
             return [WorkStep(kind: .tool, title: "Web search", text: item["query"] as? String ?? "")]
         case "mcp_tool_call" where started:
-            return [WorkStep(kind: .tool, title: "\(item["server"] as? String ?? "mcp") \(item["tool"] as? String ?? "")", text: "")]
+            let args = (item["arguments"]).flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys, .prettyPrinted]) }
+            return [WorkStep(kind: .tool, title: "\(item["server"] as? String ?? "mcp") \(item["tool"] as? String ?? "")",
+                             text: WorkStep.clip(args.map { String(decoding: $0, as: UTF8.self) } ?? "", 4000))]
+        case "todo_list" where started || o["type"] as? String == "item.updated":
+            let list = (item["items"] as? [[String: Any]] ?? []).map { "\($0["completed"] as? Bool == true ? "[x]" : "[ ]") \($0["text"] as? String ?? "")" }
+            return [WorkStep(kind: .tool, title: "Plan", text: list.joined(separator: "\n"))]
         default: break
         }
         return []
