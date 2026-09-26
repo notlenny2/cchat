@@ -43,7 +43,7 @@
 		<string>_cmessage._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan the code on your Mac to link cChat.</string>
+	<string>Scan the code on your Mac to link cChat, and take pictures to send to your agents.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>cChat talks to your Mac on your Wi-Fi, where your agents run.</string>
 	<key>UILaunchScreen</key>
