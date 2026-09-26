@@ -49,12 +49,8 @@ struct ContactsSheet: View {
             }
             Divider()
             if store.projects.isEmpty {
-                VStack(spacing: 8) {
-                    Text("No contacts yet").font(.headline)
-                    Text(NodeTermImport.isInstalled ? "Every project is a contact. Add one from \(Prefs.projectsRootShort) with the + button, or bring over your NodeTerm chats." : "Every project is a contact. Add one from \(Prefs.projectsRootShort) with the + button.")
-                        .foregroundStyle(.secondary).multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
+                FirstProjectCard { dismiss() }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     ForEach(store.projects) { p in

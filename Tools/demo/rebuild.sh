@@ -1,6 +1,6 @@
 set -e
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-cd /tmp/cchat-demo/src
+mkdir -p /tmp/cchat-demo/src /tmp/cchat-demo/bin && cd /tmp/cchat-demo/src
 for f in "$REPO"/cMessage/Sources/*.swift "$REPO"/Shared/*.swift; do cp "$f" .; done
 python3 - <<'PY'
 p='ClaudeRunner.swift'; s=open(p).read()
@@ -13,5 +13,5 @@ s=s.replace('@StateObject private var store = Store()','init() { Demo.prepare() 
 s=s.replace('DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }','DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }\n                    Demo.start(store)',1)
 open(p,'w').write(s)
 PY
-P=/tmp/dd-personal/Build/Products/Release
+P=${P:-/tmp/dd-personal/Build/Products/Release}
 swiftc -swift-version 5 -O -parse-as-library -I $P $P/SwiftTerm.o *.swift -o ../cchat-demo 2>&1 | grep -E "error:" || true

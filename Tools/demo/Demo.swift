@@ -12,9 +12,18 @@ enum Demo {
 
     // MARK: fake data
 
+    static var firstRun: Bool { ProcessInfo.processInfo.environment["DEMO_MODE"] == "first" }
+
     static func prepare() {
         let d = UserDefaults.standard
         d.set(true, forKey: "setupDone")
+        if firstRun {
+            // A brand-new user: no contacts, no projects folder yet.
+            d.set("Sam", forKey: "userName")
+            d.set(root.appendingPathComponent("projects").path, forKey: "projectsRoot")
+            try? FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+            return
+        }
         d.set("Sam", forKey: "userName")
         d.set(root.appendingPathComponent("projects").path, forKey: "projectsRoot")
         d.set(false, forKey: "usageCollapsed")
@@ -178,10 +187,10 @@ enum Demo {
             w.makeKeyAndOrderFront(nil)
             w.setContentSize(NSSize(width: 1280, height: 800))
             w.center()
-            s.selectedId = sourdough
+            if !firstRun { s.selectedId = sourdough }
             try? await Task.sleep(for: .seconds(2))
             let mode = ProcessInfo.processInfo.environment["DEMO_MODE"] ?? "shots"
-            if mode == "video" { await video(s) } else { await shots(s) }
+            if mode == "video" { await video(s) } else if mode == "first" { await first(s) } else { await shots(s) }
             exit(0)
         }
     }
@@ -196,6 +205,23 @@ enum Demo {
                 snap("\(name)-\(tag)")
             }
         }
+    }
+
+    /// The first minute: empty app, name a project, Start, land in its chat.
+    static func first(_ s: Store) async {
+        snap("0-first-light")
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        try? await Task.sleep(for: .seconds(1))
+        snap("0-first-dark")
+        NSApp.appearance = NSAppearance(named: .aqua)
+        try? await Task.sleep(for: .seconds(1))
+        await type("Sourdough Site")
+        try? await Task.sleep(for: .seconds(0.5))
+        snap("0-first-typed")
+        submit()
+        try? await Task.sleep(for: .seconds(2))
+        snap("0-first-chat")
+        print("contacts: \(s.contacts.map(\.name)) chats: \(s.conversations.count) folder exists: \(FileManager.default.fileExists(atPath: root.appendingPathComponent("projects/sourdough-site/CLAUDE.md").path))")
     }
 
     static func video(_ s: Store) async {

@@ -33,11 +33,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showContacts)) { _ in showContacts = true }
         .onReceive(NotificationCenter.default.publisher(for: .showPairing)) { _ in showPairing = true }
         .sheet(isPresented: $showPairing) { PairingSheet() }
+        // With no contacts yet, the main window itself shows "Start your first project"; no Contacts book pops up.
         .sheet(isPresented: $showSetup) {
-            SetupView { showSetup = false; if store.contacts.isEmpty { showContacts = true } }
+            SetupView { showSetup = false }
                 .interactiveDismissDisabled()
         }
-        .onAppear { if Prefs.setupDone && store.contacts.isEmpty { showContacts = true } }
     }
 
     /// The open chat's project folder (a group uses its first member's), else the projects folder.
@@ -157,20 +157,22 @@ struct ContentView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "message.fill")
-                .font(.system(size: 54))
-                .hidden()
-                .overlay(
+        Group {
+            if store.contacts.isEmpty {
+                // A brand-new user: no "go find a folder", just name a project and start texting.
+                FirstProjectCard()
+            } else {
+                VStack(spacing: 14) {
                     HStack(spacing: 7) { ClayDimple(size: 12); ClayDimple(size: 12); ClayDimple(size: 12) }
                         .padding(.horizontal, 26).padding(.vertical, 20)
                         .clay(Clay.terracotta, radius: 26)
-                )
-            Text(store.contacts.isEmpty ? "Add a project to start texting it." : "Pick a chat, or start a new one.")
-                .foregroundStyle(Clay.inkSoft)
-            HStack {
-                Button("Contacts") { showContacts = true }
-                Button("New Message") { showNew = true }.buttonStyle(.borderedProminent)
+                    Text("Pick a chat, or start a new one.")
+                        .foregroundStyle(Clay.inkSoft)
+                    HStack {
+                        Button("Contacts") { showContacts = true }
+                        Button("New Message") { showNew = true }.buttonStyle(.borderedProminent)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
