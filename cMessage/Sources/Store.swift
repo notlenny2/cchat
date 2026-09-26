@@ -169,6 +169,27 @@ final class Store: ObservableObject {
     }
     var pinnedConversations: [Conversation] { visibleConversations.filter(\.isPinned) }
 
+    /// A contact's top-level project, for the chat list's folders. nil when it has no project folder of its own
+    /// (some NodeTerm imports point at the home folder).
+    func projectOf(_ id: UUID) -> (id: UUID, name: String)? {
+        guard var c = contact(id) else { return nil }
+        if let p = c.parentId, let parent = contact(p) { c = parent }
+        let path = URL(fileURLWithPath: c.projectPath).standardizedFileURL.path
+        guard path != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path, path != "/" else { return nil }
+        return (c.id, c.name)
+    }
+
+    func folders(_ convs: [Conversation]) -> [ChatFolders.Folder] { ChatFolders.sort(convs, project: projectOf) }
+
+    /// Files a chat under another folder of the chat list (a project's id or `ChatFolders.other`). Filing it back
+    /// under its own project clears the override.
+    func file(_ convId: UUID, into folder: String) {
+        guard let i = index(of: convId) else { return }
+        let own = conversations[i].participantIds.first.flatMap(projectOf)?.id.uuidString ?? ChatFolders.other
+        conversations[i].folder = folder == own ? nil : folder
+        save()
+    }
+
     func togglePin(_ convId: UUID) {
         guard let i = index(of: convId) else { return }
         conversations[i].pinned = conversations[i].isPinned ? nil : true

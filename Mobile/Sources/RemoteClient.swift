@@ -123,6 +123,19 @@ final class RemoteClient: ObservableObject {
     func stopReply(_ conv: UUID) { fire(RPCRequest(op: .stop, conv: conv)) }
     func markRead(_ conv: UUID) { fire(RPCRequest(op: .markRead, conv: conv)) }
     func hide(_ conv: UUID) { fire(RPCRequest(op: .hide, conv: conv)) }
+    func file(_ conv: UUID, into folder: String) { fire(RPCRequest(op: .file, conv: conv, text: folder)) }
+
+    /// A contact's top-level project, for the chat list's folders (same rule as the Mac's `Store.projectOf`).
+    func projectOf(_ id: UUID) -> (id: UUID, name: String)? {
+        guard var c = contact(id) else { return nil }
+        if let p = c.parentId, let parent = contact(p) { c = parent }
+        return c.noProject == true ? nil : (c.id, c.name)
+    }
+    func folders(_ convs: [Conversation]) -> [ChatFolders.Folder] { ChatFolders.sort(convs, project: projectOf) }
+    var projects: [RemoteContact] {
+        (snapshot?.contacts ?? []).filter { $0.parentId == nil && $0.noProject != true }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
 
     func merge(_ source: UUID, into target: UUID) async -> UUID? {
         try? await call(RPCRequest(op: .merge, conv: source, target: target)).convId

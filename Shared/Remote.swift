@@ -64,6 +64,8 @@ struct RemoteContact: Codable, Identifiable, Hashable {
     var initials: String
     /// A sub-contact with its own picture (not borrowing its project's icon). Optional so older Macs still decode.
     var ownIcon: Bool? = nil
+    /// A project contact with no project folder of its own (its chats go under "Other chats"). Optional for older Macs.
+    var noProject: Bool? = nil
 }
 
 struct RemoteSnapshot: Codable {
@@ -84,7 +86,7 @@ struct RemoteSnapshot: Codable {
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject, ask, media, chatter, team, leave }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject, ask, media, chatter, team, leave, file }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString

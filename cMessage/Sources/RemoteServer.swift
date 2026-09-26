@@ -258,6 +258,12 @@ final class RemoteServer: ObservableObject {
             if let c = req.conv { store.markRead(c) }
         case .hide:
             if let c = req.conv { store.hide(c) }
+        case .file:
+            // Only "Other chats" or a real project's id; anything else is refused.
+            if let c = req.conv, let f = req.text,
+               f == ChatFolders.other || UUID(uuidString: f).flatMap(store.projectOf)?.id.uuidString == f {
+                store.file(c, into: f)
+            } else { res.ok = false }
         case .merge:
             if let c = req.conv, let t = req.target { res.convId = store.merge(c, into: t) } else { res.ok = false }
         case .open:
@@ -315,7 +321,8 @@ final class RemoteServer: ObservableObject {
             RemoteContact(id: c.id, name: c.name, displayName: store.displayName(c), parentId: c.parentId,
                           folder: URL(fileURLWithPath: c.projectPath).lastPathComponent, role: c.role,
                           colorIndex: c.colorIndex, hasIcon: store.iconPath(for: c) != nil, initials: c.initials,
-                          ownIcon: c.iconPath != nil)
+                          ownIcon: c.iconPath != nil,
+                          noProject: !c.isSubContact && store.projectOf(c.id) == nil ? true : nil)
         }
         return RemoteSnapshot(version: store.version, macName: Host.current().localizedName ?? "Mac",
                               contacts: contacts,

@@ -10,6 +10,8 @@ struct ContentView: View {
     @State private var renaming: Conversation?
     @State private var newName = ""
     @State private var dropTarget: UUID?
+    @State private var folderTarget: String?
+    @AppStorage("foldedFolders") private var foldedFolders = ""
 
     var body: some View {
         NavigationSplitView {
@@ -62,21 +64,28 @@ struct ContentView: View {
                     .listRowSeparator(.hidden)
                     .selectionDisabled()
             }
-            ForEach(filtered.filter { !search.isEmpty || !$0.isPinned }) { c in
-                ConversationRow(conv: c)
-                    .tag(c.id)
-                    .contextMenu { chatMenu(c) }
-                    .draggable(c.id.uuidString) {
-                        HStack { GroupAvatar(ids: c.participantIds, size: 28, photo: c.photoPath); Text(store.title(for: c)) }
-                            .padding(6).background(.regularMaterial, in: Capsule())
+            if !search.isEmpty {
+                ForEach(filtered) { chatRow($0) }
+            } else {
+                let folded = ChatFolders.folded(foldedFolders)
+                ForEach(store.folders(filtered.filter { !$0.isPinned })) { f in
+                    FolderHeading(folder: f, open: !folded.contains(f.id), target: folderTarget == f.id) {
+                        withAnimation(.easeOut(duration: 0.15)) { foldedFolders = ChatFolders.toggle(f.id, in: foldedFolders) }
+                    } avatar: {
+                        GroupAvatar(ids: f.project.map { [$0] } ?? [], size: 22)
                     }
+                    .selectionDisabled()
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
                     .dropDestination(for: String.self) { items, _ in
                         guard let s = items.first.flatMap(UUID.init(uuidString:)) else { return false }
-                        return withAnimation { store.merge(s, into: c.id) != nil }
+                        withAnimation { store.file(s, into: f.id) }
+                        return true
                     } isTargeted: { on in
-                        if on { dropTarget = c.id } else if dropTarget == c.id { dropTarget = nil }
+                        if on { folderTarget = f.id } else if folderTarget == f.id { folderTarget = nil }
                     }
-                    .listRowBackground(dropTarget == c.id ? RoundedRectangle(cornerRadius: 8).fill(Palette.blue.opacity(0.25)) : nil)
+                    if !folded.contains(f.id) { ForEach(f.convs) { chatRow($0) } }
+                }
             }
         }
         .listStyle(.sidebar)
@@ -112,9 +121,36 @@ struct ContentView: View {
         }
     }
 
+    private func chatRow(_ c: Conversation) -> some View {
+        ConversationRow(conv: c)
+            .tag(c.id)
+            .contextMenu { chatMenu(c) }
+            .draggable(c.id.uuidString) {
+                HStack { GroupAvatar(ids: c.participantIds, size: 28, photo: c.photoPath); Text(store.title(for: c)) }
+                    .padding(6).background(.regularMaterial, in: Capsule())
+            }
+            .dropDestination(for: String.self) { items, _ in
+                guard let s = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+                return withAnimation { store.merge(s, into: c.id) != nil }
+            } isTargeted: { on in
+                if on { dropTarget = c.id } else if dropTarget == c.id { dropTarget = nil }
+            }
+            .listRowBackground(dropTarget == c.id ? RoundedRectangle(cornerRadius: 8).fill(Palette.blue.opacity(0.25)) : nil)
+    }
+
     @ViewBuilder private func chatMenu(_ c: Conversation) -> some View {
         Button(c.isPinned ? "Unpin" : "Pin") { withAnimation { store.togglePin(c.id) } }
         Button("Rename…") { newName = store.title(for: c); renaming = c }
+        Menu("Move to Folder") {
+            let current = store.folders([c]).first?.id
+            ForEach(store.projects.filter { store.projectOf($0.id) != nil }) { p in
+                Button(p.name) { withAnimation { store.file(c.id, into: p.id.uuidString) } }
+                    .disabled(current == p.id.uuidString)
+            }
+            Divider()
+            Button("Other chats") { withAnimation { store.file(c.id, into: ChatFolders.other) } }
+                .disabled(current == ChatFolders.other)
+        }
         Divider()
         Button("Hide Chat (keeps memory)") { store.hide(c.id) }
         Button("Delete Chat and Memory", role: .destructive) { store.deleteForever(c.id) }

@@ -8,6 +8,8 @@ struct MainView: View {
     @State private var newName = ""
     @State private var showNew = false
     @State private var dropTarget: UUID?
+    @State private var folderTarget: String?
+    @AppStorage("foldedFolders") private var foldedFolders = ""
 
     var body: some View {
         NavigationSplitView {
@@ -58,24 +60,24 @@ struct MainView: View {
                 .padding(.vertical, 6)
                 .listRowSeparator(.hidden)
             }
-            ForEach(client.conversations.filter { !$0.isPinned }) { c in
-                NavigationLink(value: c.id) { Row(conv: c) }
-                    .contextMenu { menu(c) }
-                    .swipeActions(edge: .leading) {
-                        Button { client.togglePin(c.id) } label: { Label("Pin", systemImage: "pin") }.tint(.orange)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button { client.hide(c.id) } label: { Label("Hide", systemImage: "eye.slash") }.tint(.gray)
-                    }
-                    .draggable(c.id.uuidString)
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let s = items.first.flatMap(UUID.init(uuidString:)), s != c.id else { return false }
-                        Task { if let g = await client.merge(s, into: c.id) { selected = g } }
-                        return true
-                    } isTargeted: { on in
-                        if on { dropTarget = c.id } else if dropTarget == c.id { dropTarget = nil }
-                    }
-                    .listRowBackground(dropTarget == c.id ? Palette.blue.opacity(0.2) : Color.clear)
+            let folded = ChatFolders.folded(foldedFolders)
+            ForEach(client.folders(client.conversations.filter { !$0.isPinned })) { f in
+                FolderHeading(folder: f, open: !folded.contains(f.id), target: folderTarget == f.id) {
+                    withAnimation(.easeOut(duration: 0.15)) { foldedFolders = ChatFolders.toggle(f.id, in: foldedFolders) }
+                } avatar: {
+                    GroupAvatar(ids: f.project.map { [$0] } ?? [], size: 22)
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 2, trailing: 8))
+                .dropDestination(for: String.self) { items, _ in
+                    guard let s = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+                    client.file(s, into: f.id)
+                    return true
+                } isTargeted: { on in
+                    if on { folderTarget = f.id } else if folderTarget == f.id { folderTarget = nil }
+                }
+                if !folded.contains(f.id) { ForEach(f.convs) { row($0) } }
             }
         }
         .listStyle(.plain)
@@ -93,9 +95,37 @@ struct MainView: View {
         }
     }
 
+    private func row(_ c: Conversation) -> some View {
+        NavigationLink(value: c.id) { Row(conv: c) }
+            .contextMenu { menu(c) }
+            .swipeActions(edge: .leading) {
+                Button { client.togglePin(c.id) } label: { Label("Pin", systemImage: "pin") }.tint(.orange)
+            }
+            .swipeActions(edge: .trailing) {
+                Button { client.hide(c.id) } label: { Label("Hide", systemImage: "eye.slash") }.tint(.gray)
+            }
+            .draggable(c.id.uuidString)
+            .dropDestination(for: String.self) { items, _ in
+                guard let s = items.first.flatMap(UUID.init(uuidString:)), s != c.id else { return false }
+                Task { if let g = await client.merge(s, into: c.id) { selected = g } }
+                return true
+            } isTargeted: { on in
+                if on { dropTarget = c.id } else if dropTarget == c.id { dropTarget = nil }
+            }
+            .listRowBackground(dropTarget == c.id ? Palette.blue.opacity(0.2) : Color.clear)
+    }
+
     @ViewBuilder private func menu(_ c: Conversation) -> some View {
         Button { client.togglePin(c.id) } label: { Label(c.isPinned ? "Unpin" : "Pin", systemImage: c.isPinned ? "pin.slash" : "pin") }
         Button { newName = client.title(c); renaming = c } label: { Label("Rename", systemImage: "pencil") }
+        Menu {
+            let current = client.folders([c]).first?.id
+            ForEach(client.projects) { p in
+                Button(p.name) { client.file(c.id, into: p.id.uuidString) }.disabled(current == p.id.uuidString)
+            }
+            Divider()
+            Button("Other chats") { client.file(c.id, into: ChatFolders.other) }.disabled(current == ChatFolders.other)
+        } label: { Label("Move to Folder", systemImage: "folder") }
         Button { client.hide(c.id) } label: { Label("Hide (keeps memory)", systemImage: "eye.slash") }
     }
 

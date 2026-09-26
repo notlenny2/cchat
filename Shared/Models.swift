@@ -136,9 +136,56 @@ struct Conversation: Identifiable, Codable, Hashable {
     /// An agent here is stuck until the user answers (a decision, an OK, a login, a permission).
     /// Set from a `<<needs you: why>>` line or a blocked tool; cleared as soon as the user texts this chat.
     var needsYou: String? = nil
+    /// Which project folder of the chat list this chat is filed under (a project contact's id, or
+    /// `ChatFolders.other`). nil = its own project, worked out from its first member. Only tidies the list;
+    /// the agents keep working in their own project folders.
+    var folder: String? = nil
 
     var isGroup: Bool { participantIds.count > 1 }
     var lastDate: Date { messages.last?.date ?? .distantPast }
+}
+
+/// The chat list sorted into project folders (Mac and phone). Each chat sits under the project of its first
+/// member unless it was dragged into another folder; chats with no real project go under "Other chats".
+enum ChatFolders {
+    static let other = "other"
+
+    struct Folder: Identifiable {
+        let id: String
+        let name: String
+        /// The project contact the heading shows the picture of. nil for "Other chats".
+        let project: UUID?
+        var convs: [Conversation]
+    }
+
+    /// `project` maps a contact to its top-level project (id + name), or nil when it has no project folder.
+    /// Folders come newest first, "Other chats" last; chats keep the order they came in.
+    static func sort(_ convs: [Conversation], project: (UUID) -> (id: UUID, name: String)?) -> [Folder] {
+        var folders: [String: Folder] = [:], order: [String] = []
+        func add(_ key: String, _ name: String, _ pid: UUID?, _ c: Conversation) {
+            if folders[key] == nil { folders[key] = Folder(id: key, name: name, project: pid, convs: []); order.append(key) }
+            folders[key]?.convs.append(c)
+        }
+        for c in convs {
+            if let f = c.folder, f == other { add(other, "Other chats", nil, c); continue }
+            if let f = c.folder, let id = UUID(uuidString: f), let p = project(id), p.id == id { add(f, p.name, id, c); continue }
+            if let first = c.participantIds.first, let p = project(first) { add(p.id.uuidString, p.name, p.id, c) }
+            else { add(other, "Other chats", nil, c) }
+        }
+        let newest = { (f: Folder) in f.convs.map(\.lastDate).max() ?? .distantPast }
+        return order.compactMap { folders[$0] }.sorted { a, b in
+            if (a.id == other) != (b.id == other) { return b.id == other }
+            return newest(a) > newest(b)
+        }
+    }
+
+    /// Folded headings, kept per device as one comma-separated string.
+    static func folded(_ s: String) -> Set<String> { Set(s.split(separator: ",").map(String.init)) }
+    static func toggle(_ id: String, in s: String) -> String {
+        var set = folded(s)
+        if set.contains(id) { set.remove(id) } else { set.insert(id) }
+        return set.sorted().joined(separator: ",")
+    }
 }
 
 struct StoreData: Codable {
