@@ -312,7 +312,26 @@ final class Store: ObservableObject {
     // MARK: Conversations
 
     /// Opens (or brings back) the 1:1 chat with a contact, memory intact.
-    func models(for engine: Engine) -> [ModelOption] { engine == .codex ? ClaudeRunner.codexModels : ModelCatalog.claude }
+    func models(for engine: Engine) -> [ModelOption] {
+        switch engine {
+        case .claude: return ModelCatalog.claude
+        case .codex: return ClaudeRunner.codexModels
+        case .gemini: return ModelCatalog.gemini
+        case .grok: return ClaudeRunner.grokModels
+        }
+    }
+
+    /// Engines a new chat can pick: Claude always, the others only when their command-line tool is on this Mac.
+    var availableEngines: [Engine] {
+        Engine.allCases.filter { e in
+            switch e {
+            case .claude: return true
+            case .codex: return ClaudeRunner.codexPath != nil
+            case .gemini: return ClaudeRunner.geminiPath != nil
+            case .grok: return ClaudeRunner.grokPath != nil
+            }
+        }
+    }
 
     /// What's actually answering in this chat, e.g. "Codex · GPT-5.6-Sol" or "Claude · Opus".
     func modelSummary(_ conv: Conversation) -> String {
@@ -456,7 +475,7 @@ final class Store: ObservableObject {
         let visible = conversations.filter { !$0.hidden }
         if let c = visible.first(where: { title(for: $0).lowercased() == n }) { return c.id }
         if let c = contacts.first(where: { displayName($0).lowercased() == n || $0.name.lowercased() == n }) {
-            if let conv = conversations.first(where: { $0.participantIds == [c.id] && !$0.usesCodex }) { return conv.id }
+            if let conv = conversations.first(where: { $0.participantIds == [c.id] && $0.isClaude }) { return conv.id }
             let before = selectedId
             openChat(with: c)
             defer { selectedId = before }
@@ -466,7 +485,7 @@ final class Store: ObservableObject {
         // Loose match on a contact ("website" -> "Website UX"), as long as only one fits.
         let near = contacts.filter { displayName($0).lowercased().contains(n) || n.contains($0.name.lowercased()) }
         guard near.count == 1, let c = near.first else { return nil }
-        if let conv = conversations.first(where: { $0.participantIds == [c.id] && !$0.usesCodex }) { return conv.id }
+        if let conv = conversations.first(where: { $0.participantIds == [c.id] && $0.isClaude }) { return conv.id }
         let before = selectedId
         openChat(with: c)
         defer { selectedId = before }
@@ -695,9 +714,13 @@ final class Store: ObservableObject {
         func body(_ m: Message) -> String {
             let a = (m.attachments ?? []).filter { !Media.isVideo($0) }
             guard !a.isEmpty else { return m.text }
-            let pics = conv.usesCodex
-                ? a.map { _ in "[A picture is attached, included with this message]" }.joined(separator: "\n")
-                : a.map { "[A picture is attached. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
+            let pics: String
+            switch conv.engine ?? .claude {
+            case .codex: pics = a.map { _ in "[A picture is attached, included with this message]" }.joined(separator: "\n")
+            case .gemini: pics = a.map { _ in "[A picture is attached; it is the @file at the end of this message]" }.joined(separator: "\n")
+            case .claude: pics = a.map { "[A picture is attached. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
+            case .grok: pics = a.map { "[A picture is attached. Open it with your file-reading tool: \($0)]" }.joined(separator: "\n")
+            }
             return m.text.isEmpty ? pics : "\(m.text)\n\(pics)"
         }
         var prompt: String
@@ -752,10 +775,34 @@ final class Store: ObservableObject {
         }
 
         var session = conv.sessions[key]
-        let fork = session != nil && (conv.forkNext ?? []).contains(key) && !conv.usesCodex
+        let fork = session != nil && (conv.forkNext ?? []).contains(key) && conv.isClaude
         do {
             var result: ClaudeResult
-            if conv.usesCodex {
+            if conv.usesGrok {
+                result = try await ClaudeRunner.runGrok(prompt: prompt, cwd: agent.projectPath, sessionId: session,
+                                                        systemPrompt: systemPrompt(for: agent, in: conv),
+                                                        fullAccess: agent.fullAccess, model: conv.model, onStep: onStep)
+                if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("session") {
+                    Log.info("grok resume failed for \(agent.name), starting fresh")
+                    session = nil
+                    result = try await ClaudeRunner.runGrok(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
+                                                            systemPrompt: systemPrompt(for: agent, in: conv),
+                                                            fullAccess: agent.fullAccess, model: conv.model, onStep: onStep)
+                }
+            } else if conv.usesGemini {
+                let images = fresh.flatMap { $0.attachments ?? [] }.filter { !Media.isVideo($0) }
+                result = try await ClaudeRunner.runGemini(prompt: prompt, cwd: agent.projectPath, sessionId: session,
+                                                          instructions: systemPrompt(for: agent, in: conv),
+                                                          fullAccess: agent.fullAccess, images: images, model: conv.model, onStep: onStep)
+                // The saved session may be gone (Gemini keeps them per folder, and tidies old ones). Start fresh once.
+                if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("session") {
+                    Log.info("gemini resume failed for \(agent.name), starting fresh")
+                    session = nil
+                    result = try await ClaudeRunner.runGemini(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
+                                                              instructions: systemPrompt(for: agent, in: conv),
+                                                              fullAccess: agent.fullAccess, images: images, model: conv.model, onStep: onStep)
+                }
+            } else if conv.usesCodex {
                 let images = fresh.flatMap { $0.attachments ?? [] }.filter { !Media.isVideo($0) }
                 result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: session,
                                                          instructions: systemPrompt(for: agent, in: conv),
@@ -826,7 +873,7 @@ final class Store: ObservableObject {
                 }
             }
             // Still holding the project folder, so nothing else runs in it while memory is condensed.
-            if !conv.usesCodex, !result.isError, let sid = result.sessionId {
+            if conv.isClaude, !result.isError, let sid = result.sessionId {
                 await condenseIfNeeded(agent, session: sid, window: result.contextWindow, in: convId,
                                        model: conv.model ?? agent.model)
             }

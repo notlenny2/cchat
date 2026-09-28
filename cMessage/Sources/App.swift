@@ -181,12 +181,12 @@ struct Avatar: View {
     }
 }
 
-/// Small tag next to a chat's name when Codex (not Claude) is answering.
+/// Small tag next to a chat's name when Codex or Gemini (not Claude) is answering.
 struct EngineBadge: View {
     let conv: Conversation
     var body: some View {
-        if conv.usesCodex {
-            Text("Codex").font(.system(size: 9, weight: .bold, design: .rounded))
+        if let e = conv.engine, e != .claude {
+            Text(e.label).font(.system(size: 9, weight: .bold, design: .rounded))
                 .padding(.horizontal, 5).padding(.vertical, 1.5)
                 // Ink on canvas, so it flips in dark mode (a black tag vanished on the dark chat list).
                 .foregroundStyle(Clay.canvas)

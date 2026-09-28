@@ -309,12 +309,12 @@ struct NewMessageSheet: View {
                 HStack {
                     Text("Talk to:").foregroundStyle(.secondary)
                     Picker("", selection: $engine) {
-                        ForEach(Engine.allCases) { Text($0.label).tag($0) }
+                        ForEach(store.availableEngines) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.radioGroup)
                     .horizontalRadioGroupLayout()
                     .labelsHidden()
-                    .disabled(engine == .claude && ClaudeRunner.codexPath == nil)
+                    .disabled(store.availableEngines.count < 2)
                     .onChange(of: engine) { _, _ in model = "" }
                     Spacer()
                     Picker("Model", selection: $model) {
@@ -330,7 +330,7 @@ struct NewMessageSheet: View {
                     Text("After they answer you, whoever has something to add can reply to the others for a few turns.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if e.usesCodex { Text("This chat runs on Codex.").font(.caption).foregroundStyle(.secondary) }
+                if let eng = e.engine, eng != .claude { Text("This chat runs on \(eng.label).").font(.caption).foregroundStyle(.secondary) }
             }
             List {
                 if existing == nil {

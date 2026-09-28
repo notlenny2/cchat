@@ -58,7 +58,7 @@ struct TeamSheet: View {
             }
             HStack {
                 Picker("", selection: $engine) {
-                    ForEach(Engine.allCases) { Text($0.label).tag($0) }
+                    ForEach(store.availableEngines) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.radioGroup).horizontalRadioGroupLayout().labelsHidden()
                 .onChange(of: engine) { _, _ in model = "" }

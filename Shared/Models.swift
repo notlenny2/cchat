@@ -71,9 +71,22 @@ struct WorkStep: Codable, Hashable, Identifiable {
 
 /// Which AI runs the agents in a chat. Picked when the chat starts.
 enum Engine: String, Codable, CaseIterable, Identifiable {
-    case claude, codex
+    case claude, codex, gemini, grok
     var id: String { rawValue }
-    var label: String { self == .claude ? "Claude" : "Codex" }
+    var label: String {
+        switch self {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        case .gemini: return "Gemini"
+        case .grok: return "Grok"
+        }
+    }
+    /// An engine this build doesn't know yet (a newer Mac talking to an older phone) reads as Claude
+    /// instead of breaking the whole snapshot.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Engine(rawValue: raw) ?? .claude
+    }
 }
 
 struct ModelOption: Codable, Hashable, Identifiable {
@@ -90,6 +103,13 @@ enum ModelCatalog {
         ModelOption(id: "sonnet", label: "Sonnet", note: "Fast and smart"),
         ModelOption(id: "haiku", label: "Haiku", note: "Quickest, cheapest"),
     ]
+    /// Gemini CLI's own aliases (`-m auto|pro|flash|flash-lite`), so this list doesn't go stale with each release.
+    static let gemini: [ModelOption] = [
+        ModelOption(id: "", label: "Default", note: "Gemini picks per request (auto)"),
+        ModelOption(id: "pro", label: "Pro", note: "Most capable"),
+        ModelOption(id: "flash", label: "Flash", note: "Fast and smart"),
+        ModelOption(id: "flash-lite", label: "Flash-Lite", note: "Quickest, cheapest"),
+    ]
     static func label(_ id: String?, in list: [ModelOption]) -> String? {
         guard let id, !id.isEmpty else { return nil }
         return list.first { $0.id == id }?.label ?? id
@@ -103,6 +123,10 @@ struct Conversation: Identifiable, Codable, Hashable {
     /// nil = Claude (every chat made before Codex existed).
     var engine: Engine? = nil
     var usesCodex: Bool { engine == .codex }
+    var usesGemini: Bool { engine == .gemini }
+    var usesGrok: Bool { engine == .grok }
+    /// Claude Code is the one engine with real sessions to fork/condense; the others keep their own threads.
+    var isClaude: Bool { (engine ?? .claude) == .claude }
     /// Model picked for this chat. nil = the contact's setting (Claude) or Codex's own default.
     var model: String? = nil
     /// In a group: after answering the user, let the agents carry on with each other for a few turns.

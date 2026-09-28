@@ -52,6 +52,10 @@ enum ClaudeRunner {
         return ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.claude/local/claude"]
     }()
     private static let codexSpots = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
+    private static let geminiSpots: [String] = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return ["/opt/homebrew/bin/gemini", "/usr/local/bin/gemini", "\(home)/.npm-global/bin/gemini", "\(home)/.local/bin/gemini"]
+    }()
     private static let pathLock = NSLock()
     private static var seen: [String: String] = [:]
 
@@ -319,6 +323,214 @@ enum ClaudeRunner {
         return ClaudeResult(text: messages.joined(separator: "\n\n"), sessionId: thread, deniedTools: [], isError: false)
     }
 
+    // MARK: Grok
+
+    private static let grokSpots: [String] = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return ["\(home)/.grok/bin/grok", "/opt/homebrew/bin/grok", "/usr/local/bin/grok", "\(home)/.local/bin/grok"]
+    }()
+    static var grokPath: String? { locate("grok", grokSpots) }
+
+    /// One turn of xAI's Grok Build CLI. Its `streaming-messages-json` output is the same wire format as Claude
+    /// Code's stream-json (system init, assistant/user messages, a final `result` line), so Show the Work reuses
+    /// `claudeSteps`. House rules go in with `--rules`. The prompt goes in a private temp file (`--prompt-file`),
+    /// never argv. Memory: a new chat gets `-s <uuid we made>`, later turns `-r <uuid>`.
+    static func runGrok(prompt: String, cwd: String, sessionId: String?, systemPrompt: String,
+                        fullAccess: Bool, model: String? = nil,
+                        onStep: (@Sendable (WorkStep) -> Void)? = nil) async throws -> ClaudeResult {
+        guard let grok = await waitFor("grok", grokSpots) else {
+            throw RunnerError.failed(Flavor.personal ? "Couldn't find Grok on this Mac." : "Couldn't find Grok on this Mac. Open cChat > Settings to install it.")
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
+            throw RunnerError.folderMissing(cwd)
+        }
+        let promptFile = FileManager.default.temporaryDirectory.appendingPathComponent("cchat-grok-\(UUID().uuidString).txt")
+        FileManager.default.createFile(atPath: promptFile.path, contents: prompt.data(using: .utf8), attributes: [.posixPermissions: 0o600])
+        defer { try? FileManager.default.removeItem(at: promptFile) }
+
+        let session = sessionId ?? UUID().uuidString.lowercased()
+        var args = ["--prompt-file", promptFile.path, "--output-format", "streaming-messages-json",
+                    "--rules", systemPrompt, "--no-alt-screen",
+                    "--permission-mode", fullAccess ? "bypassPermissions" : "acceptEdits"]
+        args += sessionId == nil ? ["-s", session] : ["-r", session]
+        if let model, !model.isEmpty { args += ["-m", model] }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: grok)
+        process.arguments = args
+        process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = loginPath
+        process.environment = env
+        let stdout = Pipe(), stderr = Pipe()
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = stdout
+        process.standardError = stderr
+        let outBuf = DataBox(), errBuf = DataBox()
+        let feed = LineFeed { line in onStep.map { cb in claudeSteps(line).forEach(cb) } }
+        stdout.fileHandleForReading.readabilityHandler = { h in
+            let d = h.availableData
+            outBuf.append(d)
+            if onStep != nil { feed.append(d) }
+        }
+        stderr.fileHandleForReading.readabilityHandler = { errBuf.append($0.availableData) }
+        Log.info("grok \(URL(fileURLWithPath: cwd).lastPathComponent) resume=\(sessionId.map { String($0.prefix(8)) } ?? "new") full=\(fullAccess)")
+
+        let status: Int32 = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Int32, Error>) in
+                process.terminationHandler = { cont.resume(returning: $0.terminationStatus) }
+                do { try process.run() } catch { process.terminationHandler = nil; cont.resume(throwing: error) }
+            }
+        } onCancel: {
+            if process.isRunning { process.terminate() }
+        }
+        stdout.fileHandleForReading.readabilityHandler = nil
+        stderr.fileHandleForReading.readabilityHandler = nil
+        outBuf.append(stdout.fileHandleForReading.readDataToEndOfFile())
+        errBuf.append(stderr.fileHandleForReading.readDataToEndOfFile())
+        if Task.isCancelled { throw CancellationError() }
+
+        var result: [String: Any]?, sid = session
+        for line in outBuf.data.split(separator: UInt8(ascii: "\n")) {
+            guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            if let s = o["session_id"] as? String, !s.isEmpty { sid = s }
+            if o["type"] as? String == "result" { result = o }
+        }
+        guard let obj = result else {
+            let err = firstLine(String(decoding: errBuf.data, as: UTF8.self)) ?? "Grok exited with code \(status)."
+            Log.error("grok failed (exit \(status)): \(err.prefix(800))")
+            return ClaudeResult(text: err, sessionId: sessionId, deniedTools: [], isError: true)
+        }
+        let isError = (obj["is_error"] as? Bool) ?? (status != 0)
+        let text = isError ? ((obj["errors"] as? [String])?.last ?? (obj["result"] as? String) ?? "Grok hit an error.")
+                           : ((obj["result"] as? String) ?? "")
+        if isError { Log.error("grok error: \(text.prefix(800))") }
+        if isError, text.localizedCaseInsensitiveContains("not signed in") {
+            return ClaudeResult(text: "Grok isn't signed in on this Mac yet. Open cChat > Settings and tap Sign In next to Grok.",
+                                sessionId: sessionId, deniedTools: [], isError: true)
+        }
+        let denied = (obj["permission_denials"] as? [[String: Any]] ?? []).compactMap { $0["tool_name"] as? String }
+        return ClaudeResult(text: text, sessionId: isError ? sessionId : sid, deniedTools: denied, isError: isError)
+    }
+
+    /// Grok lists its own models (`grok models`); read once per launch. Falls back to Default only.
+    static let grokModels: [ModelOption] = {
+        var out = [ModelOption(id: "", label: "Default", note: "Whatever Grok normally uses")]
+        guard let grok = grokPath else { return out }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: grok)
+        p.arguments = ["models"]
+        let pipe = Pipe()
+        p.standardOutput = pipe; p.standardError = Pipe(); p.standardInput = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return out }
+        p.waitUntilExit()
+        for line in String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard t.hasPrefix("* ") || t.hasPrefix("- ") else { continue }
+            let id = t.dropFirst(2).split(separator: " ").first.map(String.init) ?? ""
+            if !id.isEmpty { out.append(ModelOption(id: id, label: id.replacingOccurrences(of: "grok-", with: "Grok "), note: "")) }
+        }
+        return out
+    }()
+
+    // MARK: Gemini
+
+    static var geminiPath: String? { locate("gemini", geminiSpots) }
+
+    /// One turn of Google's Gemini CLI (`gemini -p -o stream-json`), shaped like a Claude result. Like Codex it
+    /// has no system-prompt flag, so cChat's house rules ride at the top of the message, clearly marked.
+    /// Memory: a new chat starts with `--session-id <uuid we made>` so the id is known even if the stream is cut
+    /// short; later turns pass `--resume <that uuid>` (sessions are per project folder, in ~/.gemini/tmp).
+    /// Pictures: `@/path` in the prompt makes Gemini read the file in; the attachments folder is added to the
+    /// workspace with `--include-directories` so it's allowed to.
+    static func runGemini(prompt: String, cwd: String, sessionId: String?, instructions: String,
+                          fullAccess: Bool, images: [String], model: String? = nil,
+                          onStep: (@Sendable (WorkStep) -> Void)? = nil) async throws -> ClaudeResult {
+        guard let gemini = await waitFor("gemini", geminiSpots) else {
+            throw RunnerError.failed(Flavor.personal ? "Couldn't find Gemini CLI on this Mac." : "Couldn't find Gemini CLI on this Mac. Open cChat > Settings to install it.")
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
+            throw RunnerError.folderMissing(cwd)
+        }
+        let session = sessionId ?? UUID().uuidString.lowercased()
+        var args = ["-p", "", "-o", "stream-json", "--skip-trust",
+                    "--approval-mode", fullAccess ? "yolo" : "auto_edit"]
+        args += sessionId == nil ? ["--session-id", session] : ["--resume", session]
+        if let model, !model.isEmpty { args += ["-m", model] }
+        if !images.isEmpty { args += ["--include-directories", Store.attachmentsDir.path] }
+        let pics = images.map { "@\($0)" }.joined(separator: "\n")
+        let full = "[cChat app instructions, not from \(Prefs.userName)]\n\(instructions)\n[end of app instructions]\n\n\(prompt)"
+            + (pics.isEmpty ? "" : "\n\n\(pics)")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: gemini)
+        process.arguments = args
+        process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = loginPath
+        process.environment = env
+        let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = stdout
+        process.standardError = stderr
+        let outBuf = DataBox(), errBuf = DataBox()
+        let feed = LineFeed { line in onStep.map { cb in geminiSteps(line).forEach(cb) } }
+        stdout.fileHandleForReading.readabilityHandler = { h in
+            let d = h.availableData
+            outBuf.append(d)
+            if onStep != nil { feed.append(d) }
+        }
+        stderr.fileHandleForReading.readabilityHandler = { errBuf.append($0.availableData) }
+        Log.info("gemini \(URL(fileURLWithPath: cwd).lastPathComponent) resume=\(sessionId.map { String($0.prefix(8)) } ?? "new") full=\(fullAccess) images=\(images.count)")
+
+        let status: Int32 = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Int32, Error>) in
+                process.terminationHandler = { cont.resume(returning: $0.terminationStatus) }
+                do {
+                    try process.run()
+                    stdin.fileHandleForWriting.write(full.data(using: .utf8) ?? Data())
+                    try? stdin.fileHandleForWriting.close()
+                } catch { process.terminationHandler = nil; cont.resume(throwing: error) }
+            }
+        } onCancel: {
+            if process.isRunning { process.terminate() }
+        }
+        stdout.fileHandleForReading.readabilityHandler = nil
+        stderr.fileHandleForReading.readabilityHandler = nil
+        outBuf.append(stdout.fileHandleForReading.readDataToEndOfFile())
+        errBuf.append(stderr.fileHandleForReading.readDataToEndOfFile())
+        if Task.isCancelled { throw CancellationError() }
+
+        var sid = session, text = "", errors: [String] = []
+        for line in outBuf.data.split(separator: UInt8(ascii: "\n")) {
+            guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            switch o["type"] as? String {
+            case "init": sid = (o["session_id"] as? String) ?? sid
+            case "message":
+                // The reply streams as deltas; tool calls in between mean a later chunk continues the same answer.
+                if (o["role"] as? String) == "assistant", let t = o["content"] as? String { text += t }
+            case "error":
+                if (o["severity"] as? String) != "warning", let m = o["message"] as? String { errors.append(m) }
+            case "result":
+                if (o["status"] as? String) == "error", let e = o["error"] as? [String: Any], let m = e["message"] as? String { errors.append(m) }
+            default: break
+            }
+        }
+        let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if reply.isEmpty {
+            let err = errors.last ?? firstLine(String(decoding: errBuf.data, as: UTF8.self)) ?? "Gemini exited with code \(status)."
+            Log.error("gemini failed (exit \(status)): \(err.prefix(800))")
+            if err.localizedCaseInsensitiveContains("auth method") {
+                return ClaudeResult(text: "Gemini isn't signed in on this Mac yet. Open cChat > Settings and tap Sign In next to Gemini.",
+                                    sessionId: sessionId, deniedTools: [], isError: true)
+            }
+            return ClaudeResult(text: err, sessionId: sessionId, deniedTools: [], isError: true)
+        }
+        return ClaudeResult(text: reply, sessionId: sid, deniedTools: [], isError: false)
+    }
+
     // MARK: Show the Work
 
     /// Turns one line of Claude Code's stream into steps: tools it called, what they returned, its thinking and
@@ -497,6 +709,49 @@ enum ClaudeRunner {
         default: break
         }
         return []
+    }
+
+    /// Same for Gemini CLI's `-o stream-json` events (init, message, tool_use, tool_result, error, result).
+    static func geminiSteps(_ line: Data) -> [WorkStep] {
+        guard let o = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return [] }
+        switch o["type"] as? String {
+        case "init":
+            let bits = [(o["model"] as? String), (o["session_id"] as? String).map { "session \($0.prefix(8))" }].compactMap { $0 }
+            return [WorkStep(kind: .info, text: "Gemini CLI · " + bits.joined(separator: " · "))]
+        case "tool_use":
+            let name = o["tool_name"] as? String ?? "tool"
+            let params = o["parameters"] as? [String: Any] ?? [:]
+            let text: String
+            if let c = params["command"] as? String { text = c + ((params["description"] as? String).map { "\n# \($0)" } ?? "") }
+            else if let p = params["file_path"] as? String ?? params["path"] as? String ?? params["absolute_path"] as? String {
+                text = p + ((params["content"] as? String).map { "\n" + $0.split(separator: "\n", omittingEmptySubsequences: false).map { "+ \($0)" }.joined(separator: "\n") } ?? "")
+                    + ((params["old_string"] as? String).map { "\n- \($0.replacingOccurrences(of: "\n", with: "\n- "))" } ?? "")
+                    + ((params["new_string"] as? String).map { "\n+ \($0.replacingOccurrences(of: "\n", with: "\n+ "))" } ?? "")
+            }
+            else if let q = params["query"] as? String ?? params["pattern"] as? String ?? params["prompt"] as? String { text = q }
+            else if let d = try? JSONSerialization.data(withJSONObject: params, options: [.sortedKeys, .prettyPrinted]) { text = String(decoding: d, as: UTF8.self) }
+            else { text = "" }
+            return [WorkStep(kind: .tool, title: name, text: WorkStep.clip(text, 4000), ref: o["tool_id"] as? String)]
+        case "tool_result":
+            let failed = (o["status"] as? String) == "error"
+            let out = (o["output"] as? String) ?? ((o["error"] as? [String: Any])?["message"] as? String) ?? ""
+            return [WorkStep(kind: .output, text: WorkStep.clip(out.isEmpty ? "(no output)" : out), failed: failed ? true : nil, ref: o["tool_id"] as? String)]
+        // "message" events are the reply itself, streamed a few words at a time; the bubble shows it whole.
+        case "error":
+            return [WorkStep(kind: .info, text: o["message"] as? String ?? "Gemini hit an error.", failed: (o["severity"] as? String) == "warning" ? nil : true)]
+        case "result":
+            let s = o["stats"] as? [String: Any] ?? [:]
+            func n(_ k: String) -> Int { s[k] as? Int ?? 0 }
+            if (o["status"] as? String) == "error" {
+                return [WorkStep(kind: .info, text: ((o["error"] as? [String: Any])?["message"] as? String) ?? "Gemini hit an error.", failed: true)]
+            }
+            let ms = n("duration_ms")
+            var bits = [ms > 0 ? "Done in \(ms >= 1000 ? "\(ms / 1000)s" : "\(ms)ms")" : "Done"]
+            if n("input_tokens") > 0 { bits.append("\(tokens(n("input_tokens"))) in" + (n("cached") > 0 ? " (\(tokens(n("cached"))) cached)" : "")) }
+            if n("output_tokens") > 0 { bits.append("\(tokens(n("output_tokens"))) out") }
+            return [WorkStep(kind: .info, text: bits.joined(separator: " · "))]
+        default: return []
+        }
     }
 
     private static func firstLine(_ s: String) -> String? {

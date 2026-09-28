@@ -269,7 +269,7 @@ final class RemoteServer: ObservableObject {
         case .open:
             if let id = req.contact, let c = store.contact(id) {
                 let before = store.selectedId
-                store.openChat(with: c, engine: req.text == "codex" ? .codex : .claude, model: req.model)
+                store.openChat(with: c, engine: Engine(rawValue: req.text ?? "") ?? .claude, model: req.model)
                 res.convId = store.selectedId
                 store.selectedId = before
             } else { res.ok = false }
@@ -330,7 +330,8 @@ final class RemoteServer: ObservableObject {
                               typing: store.typing,
                               busy: store.conversations.map(\.id).filter(store.isBusy),
                               waitingFor: store.waitingFor,
-                              models: ["claude": ModelCatalog.claude, "codex": ClaudeRunner.codexModels],
+                              // Only engines this Mac can run; the phone offers exactly these.
+                              models: Dictionary(uniqueKeysWithValues: store.availableEngines.map { ($0.rawValue, store.models(for: $0)) }),
                               usage: store.usage.isEmpty ? nil : store.usage)
     }
 

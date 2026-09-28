@@ -35,6 +35,53 @@ enum Tools {
     }
     static func learnCodex() { NSWorkspace.shared.open(URL(string: "https://github.com/openai/codex")!) }
 
+    /// Gemini CLI has no "am I signed in" command, so this reads what its own login flow leaves behind:
+    /// the auth choice in ~/.gemini/settings.json, Google sign-in tokens, or an API key in ~/.gemini/.env.
+    static func geminiState() async -> ToolState {
+        guard ClaudeRunner.geminiPath != nil else { return .missing }
+        let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini")
+        if let d = try? Data(contentsOf: home.appendingPathComponent("settings.json")),
+           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let auth = (o["security"] as? [String: Any])?["auth"] as? [String: Any],
+           let t = auth["selectedType"] as? String, !t.isEmpty { return .ready }
+        if FileManager.default.fileExists(atPath: home.appendingPathComponent("oauth_creds.json").path) { return .ready }
+        if let env = try? String(contentsOf: home.appendingPathComponent(".env"), encoding: .utf8),
+           env.contains("GEMINI_API_KEY=") { return .ready }
+        if ProcessInfo.processInfo.environment["GEMINI_API_KEY"] != nil { return .ready }
+        return .signedOut
+    }
+    /// Gemini's sign-in is its own first-run screen (Google account or API key), so this just opens it.
+    static func signInGemini() {
+        guard let p = ClaudeRunner.geminiPath else { return }
+        terminal("\(quote(p))", title: "Signing in to Gemini (pick how to sign in, then type /quit when it's done)")
+    }
+    /// Homebrew if it's here, else npm; both are Google's documented ways.
+    static var canInstallGemini: Bool { brewPath != nil || npmPath != nil }
+    static func installGemini() {
+        if let b = brewPath { terminal("\(quote(b)) install gemini-cli", title: "Installing Gemini CLI") }
+        else if let n = npmPath { terminal("\(quote(n)) install -g @google/gemini-cli", title: "Installing Gemini CLI") }
+        else { learnGemini() }
+    }
+    /// `grok models` says "You are not authenticated" until `grok login` (or an XAI_API_KEY) is set up.
+    static func grokState() async -> ToolState {
+        guard let g = ClaudeRunner.grokPath else { return .missing }
+        if ProcessInfo.processInfo.environment["XAI_API_KEY"] != nil { return .ready }
+        let out = await run(g, ["models"])
+        return out.localizedCaseInsensitiveContains("not authenticated") ? .signedOut : .ready
+    }
+    static func installGrok() { terminal("curl -fsSL https://x.ai/cli/install.sh | bash", title: "Installing Grok") }
+    static func signInGrok() {
+        guard let p = ClaudeRunner.grokPath else { return }
+        terminal("\(quote(p)) login", title: "Signing in to Grok")
+    }
+    static func learnGrok() { NSWorkspace.shared.open(URL(string: "https://docs.x.ai/build/overview")!) }
+    static func learnGemini() { NSWorkspace.shared.open(URL(string: "https://github.com/google-gemini/gemini-cli")!) }
+    private static var brewPath: String? { ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].first { FileManager.default.isExecutableFile(atPath: $0) } }
+    private static var npmPath: String? {
+        (["/opt/homebrew/bin/npm", "/usr/local/bin/npm"] + ClaudeRunner.loginPath.split(separator: ":").map { "\($0)/npm" })
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
     /// Opens Terminal running one fixed command (no user text ever goes into it), via a throwaway
     /// .command file, so no Automation permission is needed.
     private static func terminal(_ command: String, title: String) {
@@ -88,6 +135,8 @@ struct SetupView: View {
     @State private var folder = Prefs.projectsRoot
     @State private var claude: ToolState = .checking
     @State private var codex: ToolState = .checking
+    @State private var gemini: ToolState = .checking
+    @State private var grok: ToolState = .checking
     @State private var phoneLink = Prefs.phoneLink
 
     private var welcome: Bool { onDone != nil }
@@ -134,7 +183,37 @@ struct SetupView: View {
                 }
             }
 
-            row("4", "Where do your projects live?") {
+            row("4", "Gemini (optional), Google's agent") {
+                HStack(spacing: 10) {
+                    status(gemini, ready: "Installed and signed in", missing: "Not installed")
+                    switch gemini {
+                    case .missing:
+                        if Tools.canInstallGemini { Button("Install Gemini CLI", action: Tools.installGemini) }
+                        Button("Learn More", action: Tools.learnGemini)
+                    case .signedOut: Button("Sign In", action: Tools.signInGemini)
+                    default: EmptyView()
+                    }
+                }
+                Text("Free with a Google account. Signing in happens in a Terminal window; cChat never sees your password.")
+                    .font(.caption).foregroundStyle(Clay.inkSoft)
+            }
+
+            row("5", "Grok (optional), xAI's agent") {
+                HStack(spacing: 10) {
+                    status(grok, ready: "Installed and signed in", missing: "Not installed")
+                    switch grok {
+                    case .missing:
+                        Button("Install Grok", action: Tools.installGrok)
+                        Button("Learn More", action: Tools.learnGrok)
+                    case .signedOut: Button("Sign In", action: Tools.signInGrok)
+                    default: EmptyView()
+                    }
+                }
+                Text("Needs a SuperGrok or X Premium+ plan, or an xAI API key. Signing in happens in a Terminal window.")
+                    .font(.caption).foregroundStyle(Clay.inkSoft)
+            }
+
+            row("6", "Where do your projects live?") {
                 HStack(spacing: 10) {
                     Label(short(folder), systemImage: "folder").lineLimit(1).truncationMode(.middle)
                     Button("Choose…", action: pickFolder)
@@ -144,7 +223,7 @@ struct SetupView: View {
             }
 
             if !welcome {
-                row("5", "iPhone and iPad") {
+                row("7", "iPhone and iPad") {
                     Toggle("Let my iPhone or iPad link to this Mac", isOn: Binding(
                         get: { phoneLink },
                         set: { on in
@@ -179,8 +258,8 @@ struct SetupView: View {
         // Keeps checking while it's open, so it flips to "signed in" by itself once Terminal is done.
         .task {
             while !Task.isCancelled {
-                let c = await Tools.claudeState(), x = await Tools.codexState()
-                claude = c; codex = x
+                let c = await Tools.claudeState(), x = await Tools.codexState(), g = await Tools.geminiState(), k = await Tools.grokState()
+                claude = c; codex = x; gemini = g; grok = k
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }

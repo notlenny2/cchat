@@ -174,6 +174,13 @@ final class RemoteClient: ObservableObject {
         snapshot?.models?[engine.rawValue] ?? (engine == .claude ? ModelCatalog.claude : [ModelOption(id: "", label: "Default", note: "")])
     }
 
+    /// Engines the Mac says it can run (Claude always; Codex and Gemini when installed there). An older Mac
+    /// that sends no list still gets Claude and Codex, as before.
+    var availableEngines: [Engine] {
+        guard let m = snapshot?.models else { return [.claude, .codex] }
+        return Engine.allCases.filter { $0 == .claude || m[$0.rawValue] != nil }
+    }
+
     func modelSummary(_ c: Conversation) -> String {
         let e = c.engine ?? .claude
         return e.label + (ModelCatalog.label(c.model, in: models(for: e)).map { " · \($0)" } ?? "")

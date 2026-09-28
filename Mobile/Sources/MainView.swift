@@ -152,8 +152,8 @@ struct Row: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(client.title(conv)).font(.headline).lineLimit(1)
-                    if conv.usesCodex {
-                        Text("Codex").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    if let e = conv.engine, e != .claude {
+                        Text(e.label).font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.black))
                     }
                     if conv.needsYou != nil { NeedsYouTag() }
@@ -218,7 +218,7 @@ struct NewChatSheet: View {
     var body: some View {
         NavigationStack {
             Picker("Talk to", selection: $engine) {
-                ForEach(Engine.allCases) { Text($0.label).tag($0) }
+                ForEach(client.availableEngines) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented).padding(.horizontal)
             .onChange(of: engine) { _, _ in model = "" }
