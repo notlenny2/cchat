@@ -59,11 +59,14 @@ struct UsageMeter: View {
     /// Collapsed: the fuller of the two limits, colored like its bar.
     private func summary(_ name: String, _ u: PlanUsage) -> some View {
         let v = min(max(max(u.session?.current ?? 0, u.week?.current ?? 0), 0), 1)
+        // The fuller limit is the one that'll stop you, so its reset is the one worth knowing.
+        let fuller = (u.week?.current ?? 0) > (u.session?.current ?? 0) ? u.week : u.session
         return HStack(spacing: 4) {
             Circle().fill(color(v)).frame(width: 7, height: 7)
             Text("\(name) \(Int((v * 100).rounded()))%").monospacedDigit()
         }
         .font(.system(.caption, design: .rounded).weight(.medium)).foregroundStyle(Clay.ink)
+        .help(fuller?.resetsAt.flatMap { $0 > Date() ? "Resets \(Self.when($0))" : nil } ?? "")
     }
 
     private func row(_ name: String, _ u: PlanUsage) -> some View {
@@ -91,10 +94,24 @@ struct UsageMeter: View {
                 }
             }
             .frame(height: 5)
-            if let r = w.resetsAt, r > Date(), v >= 0.5 {
-                Text("Refills \(Self.when(r))").font(.system(.caption2, design: .rounded)).foregroundStyle(Clay.ink.opacity(0.55))
+            // Always shown: knowing when it refills matters as much as how full it is.
+            if let r = w.resetsAt {
+                // Ticks over each minute so the countdown doesn't go stale between turns.
+                TimelineView(.periodic(from: .now, by: 60)) { _ in
+                    Text(r > Date() ? "Resets \(Self.when(r)) · \(Self.countdown(r))" : "Refilled")
+                        .font(.system(.caption2, design: .rounded)).foregroundStyle(Clay.ink.opacity(0.55))
+                }
             }
         }
+    }
+
+    /// "in 2h 10m", "in 3 days".
+    static func countdown(_ d: Date) -> String {
+        let s = Int(d.timeIntervalSinceNow)
+        if s < 3600 { return "in \(max(1, s / 60))m" }
+        if s < 86_400 { return "in \(s / 3600)h \((s % 3600) / 60)m" }
+        let days = Int((Double(s) / 86_400).rounded())
+        return "in \(days) day\(days == 1 ? "" : "s")"
     }
 
     private func color(_ v: Double) -> Color { v >= 0.9 ? .red : v >= 0.7 ? .orange : Clay.terracotta }

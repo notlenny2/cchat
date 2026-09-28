@@ -11,6 +11,7 @@ enum ToolState: Equatable {
 enum Tools {
     static func claudeState() async -> ToolState {
         guard let claude = ClaudeRunner.claudePath else { return .missing }
+        if APIKeys.has(.claude) { return .ready }
         let out = await run(claude, ["auth", "status", "--json"])
         guard let data = out.data(using: .utf8),
               let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .signedOut }
@@ -19,6 +20,7 @@ enum Tools {
 
     static func codexState() async -> ToolState {
         guard let codex = ClaudeRunner.codexPath else { return .missing }
+        if APIKeys.has(.codex) { return .ready }
         let out = await run(codex, ["login", "status"])
         return out.localizedCaseInsensitiveContains("logged in") && !out.localizedCaseInsensitiveContains("not logged in") ? .ready : .signedOut
     }
@@ -39,6 +41,7 @@ enum Tools {
     /// the auth choice in ~/.gemini/settings.json, Google sign-in tokens, or an API key in ~/.gemini/.env.
     static func geminiState() async -> ToolState {
         guard ClaudeRunner.geminiPath != nil else { return .missing }
+        if APIKeys.has(.gemini) { return .ready }
         let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini")
         if let d = try? Data(contentsOf: home.appendingPathComponent("settings.json")),
            let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
@@ -65,6 +68,7 @@ enum Tools {
     /// `grok models` says "You are not authenticated" until `grok login` (or an XAI_API_KEY) is set up.
     static func grokState() async -> ToolState {
         guard let g = ClaudeRunner.grokPath else { return .missing }
+        if APIKeys.has(.grok) { return .ready }
         if ProcessInfo.processInfo.environment["XAI_API_KEY"] != nil { return .ready }
         let out = await run(g, ["models"])
         return out.localizedCaseInsensitiveContains("not authenticated") ? .signedOut : .ready
@@ -142,6 +146,8 @@ struct SetupView: View {
     private var welcome: Bool { onDone != nil }
 
     var body: some View {
+        // Seven rows plus key boxes can outgrow a laptop screen, so it scrolls.
+        ScrollView {
         VStack(alignment: .leading, spacing: 18) {
             if welcome {
                 HStack(spacing: 14) {
@@ -169,6 +175,7 @@ struct SetupView: View {
                     }
                 }
                 Text("Uses your own Claude account and plan. Signing in happens in a Terminal window; cChat never sees your password.")
+                APIKeyField(engine: .claude)
                     .font(.caption).foregroundStyle(Clay.inkSoft)
             }
 
@@ -181,6 +188,7 @@ struct SetupView: View {
                     default: EmptyView()
                     }
                 }
+                APIKeyField(engine: .codex)
             }
 
             row("4", "Gemini (optional), Google's agent") {
@@ -195,6 +203,7 @@ struct SetupView: View {
                     }
                 }
                 Text("Free with a Google account. Signing in happens in a Terminal window; cChat never sees your password.")
+                APIKeyField(engine: .gemini)
                     .font(.caption).foregroundStyle(Clay.inkSoft)
             }
 
@@ -210,6 +219,7 @@ struct SetupView: View {
                     }
                 }
                 Text("Needs a SuperGrok or X Premium+ plan, or an xAI API key. Signing in happens in a Terminal window.")
+                APIKeyField(engine: .grok)
                     .font(.caption).foregroundStyle(Clay.inkSoft)
             }
 
@@ -253,7 +263,9 @@ struct SetupView: View {
             }
         }
         .padding(28)
+        }
         .frame(width: 560)
+        .frame(minHeight: 420, idealHeight: 760, maxHeight: 900)
         .background(Clay.canvas)
         // Keeps checking while it's open, so it flips to "signed in" by itself once Terminal is done.
         .task {
@@ -314,5 +326,44 @@ struct SetupView: View {
         save()
         Prefs.setupDone = true
         onDone?()
+    }
+}
+
+
+/// "Use an API key instead": pay-per-use for people without a plan (or who'd rather). The key goes into the
+/// Keychain (see APIKeys) and is only ever handed to that engine's own command-line tool.
+struct APIKeyField: View {
+    let engine: Engine
+    @State private var saved = false
+    @State private var open = false
+    @State private var draft = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if saved {
+                HStack(spacing: 8) {
+                    Label("Using your \(engine.label) API key", systemImage: "key.fill").font(.caption).foregroundStyle(Clay.ink)
+                    Button("Remove") { APIKeys.set(nil, for: engine); saved = false }.controlSize(.small)
+                }
+                Text("Charged per use to that account, not your plan. Remove it to go back to signing in.")
+                    .font(.caption2).foregroundStyle(Clay.inkSoft)
+            } else if open {
+                HStack(spacing: 8) {
+                    SecureField("Paste your \(engine.label) API key", text: $draft).textFieldStyle(.roundedBorder).frame(maxWidth: 280)
+                        .onSubmit(save)
+                    Button("Save", action: save).controlSize(.small).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Cancel") { open = false; draft = "" }.controlSize(.small)
+                }
+                Link("Get a key", destination: APIKeys.consoleURL(engine)).font(.caption)
+            } else {
+                Button("Use an API key instead") { open = true }.buttonStyle(.link).font(.caption)
+            }
+        }
+        .onAppear { saved = APIKeys.has(engine) }
+    }
+
+    private func save() {
+        if APIKeys.set(draft, for: engine) { saved = true }
+        open = false; draft = ""
     }
 }

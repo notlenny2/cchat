@@ -105,6 +105,7 @@ enum ClaudeRunner {
         process.currentDirectoryURL = URL(fileURLWithPath: cwd)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = loginPath
+        APIKeys.apply(.claude, to: &env)
         env.removeValue(forKey: "CLAUDECODE")
         process.environment = env
 
@@ -177,6 +178,7 @@ enum ClaudeRunner {
         process.currentDirectoryURL = FileManager.default.temporaryDirectory
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = loginPath
+        APIKeys.apply(.claude, to: &env)
         env.removeValue(forKey: "CLAUDECODE")
         process.environment = env
         let stdin = Pipe(), stdout = Pipe()
@@ -268,6 +270,7 @@ enum ClaudeRunner {
         process.currentDirectoryURL = URL(fileURLWithPath: cwd)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = loginPath
+        APIKeys.apply(.codex, to: &env)
         process.environment = env
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         process.standardInput = stdin
@@ -362,6 +365,7 @@ enum ClaudeRunner {
         process.currentDirectoryURL = URL(fileURLWithPath: cwd)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = loginPath
+        APIKeys.apply(.grok, to: &env)
         process.environment = env
         let stdout = Pipe(), stderr = Pipe()
         process.standardInput = FileHandle.nullDevice
@@ -407,7 +411,9 @@ enum ClaudeRunner {
                            : ((obj["result"] as? String) ?? "")
         if isError { Log.error("grok error: \(text.prefix(800))") }
         if isError, text.localizedCaseInsensitiveContains("not signed in") {
-            return ClaudeResult(text: "Grok isn't signed in on this Mac yet. Open cChat > Settings and tap Sign In next to Grok.",
+            return ClaudeResult(text: APIKeys.has(.grok)
+                                    ? "Grok didn't accept your xAI API key. Check it in cChat > Settings, next to Grok."
+                                    : "Grok isn't signed in on this Mac yet. Open cChat > Settings and tap Sign In next to Grok.",
                                 sessionId: sessionId, deniedTools: [], isError: true)
         }
         let denied = (obj["permission_denials"] as? [[String: Any]] ?? []).compactMap { $0["tool_name"] as? String }
@@ -470,6 +476,7 @@ enum ClaudeRunner {
         process.currentDirectoryURL = URL(fileURLWithPath: cwd)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = loginPath
+        APIKeys.apply(.gemini, to: &env)
         process.environment = env
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         process.standardInput = stdin
@@ -522,6 +529,10 @@ enum ClaudeRunner {
         if reply.isEmpty {
             let err = errors.last ?? firstLine(String(decoding: errBuf.data, as: UTF8.self)) ?? "Gemini exited with code \(status)."
             Log.error("gemini failed (exit \(status)): \(err.prefix(800))")
+            if APIKeys.has(.gemini), err.localizedCaseInsensitiveContains("api key") {
+                return ClaudeResult(text: "Gemini didn't accept your API key. Check it in cChat > Settings, next to Gemini.",
+                                    sessionId: sessionId, deniedTools: [], isError: true)
+            }
             if err.localizedCaseInsensitiveContains("auth method") {
                 return ClaudeResult(text: "Gemini isn't signed in on this Mac yet. Open cChat > Settings and tap Sign In next to Gemini.",
                                     sessionId: sessionId, deniedTools: [], isError: true)
