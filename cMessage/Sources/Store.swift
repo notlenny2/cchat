@@ -652,7 +652,7 @@ final class Store: ObservableObject {
         tasks[convId]?.cancel()
         tasks[convId] = nil
         typing[convId] = nil
-        if let i = index(of: convId) { conversations[i].pending = [] }
+        if let i = index(of: convId) { conversations[i].pending = []; conversations[i].routeNext = nil }
     }
 
     private func stopAll(involving contactId: UUID) {
@@ -665,22 +665,29 @@ final class Store: ObservableObject {
         guard tasks[convId] == nil else { return }
         tasks[convId] = Task { [weak self] in
             guard let self else { return }
-            if let i = self.index(of: convId), self.conversations[i].routeNext == true {
-                self.conversations[i].routeNext = nil
-                let ids = await self.route(convId)
-                if Task.isCancelled { return }
-                if let j = self.index(of: convId) {
-                    for id in ids where !self.conversations[j].pending.contains(id) { self.conversations[j].pending.append(id) }
-                    if ids.count < self.conversations[j].participantIds.count {
-                        let names = ids.compactMap { self.contact($0) }.map(self.displayName).joined(separator: " and ")
-                        self.conversations[j].messages.append(Message(senderId: nil, text: "\(names) picked this up", kind: .system))
-                    }
-                }
-            }
             while !Task.isCancelled, let i = self.index(of: convId) {
+                // Checked every loop, not just at the start: a text sent while someone was mid-reply sets this
+                // and used to be dropped, because the loop never looked at it again.
+                if self.conversations[i].routeNext == true {
+                    self.conversations[i].routeNext = nil
+                    let ids = await self.route(convId)
+                    if Task.isCancelled { break }
+                    if let j = self.index(of: convId) {
+                        for id in ids where !self.conversations[j].pending.contains(id) { self.conversations[j].pending.append(id) }
+                        if ids.count < self.conversations[j].participantIds.count {
+                            let names = ids.compactMap { self.contact($0) }.map(self.displayName).joined(separator: " and ")
+                            self.conversations[j].messages.append(Message(senderId: nil, text: "\(names) picked this up", kind: .system))
+                        }
+                    }
+                    continue
+                }
                 if self.conversations[i].pending.isEmpty {
                     // Nobody owes the user an answer. Should one of them come back at the last one?
                     let next = await self.followUp(convId)
+                    // The user may have texted while that was being decided. Their message comes first,
+                    // and must not be overwritten or dropped.
+                    if !Task.isCancelled, let j = self.index(of: convId),
+                       !self.conversations[j].pending.isEmpty || self.conversations[j].routeNext == true { continue }
                     if next.isEmpty || Task.isCancelled {
                         if let j = self.index(of: convId), self.conversations[j].isGroup,
                            self.repliesSinceUser(self.conversations[j]) >= Self.chatterLimit {
