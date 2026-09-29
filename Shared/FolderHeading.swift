@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A project's heading in the chat list: tap to fold it away, drop a chat on it to file the chat there.
 /// Project heading in the chat list. Biggest thing in the list: project > group chat > single chat.
-enum FolderHeadingSize { static let avatar: CGFloat = 34 }
+enum FolderHeadingSize { static let avatar: CGFloat = 44 }
 
 struct FolderHeading<Avatar: View>: View {
     static var avatarSize: CGFloat { FolderHeadingSize.avatar }
@@ -19,11 +19,11 @@ struct FolderHeading<Avatar: View>: View {
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .foregroundStyle(Clay.inkSoft).frame(width: 10)
                 if folder.project == nil {
-                    Image(systemName: "tray.full").font(.system(size: 18)).foregroundStyle(Clay.inkSoft).frame(width: FolderHeading.avatarSize, height: FolderHeading.avatarSize)
+                    Image(systemName: "tray.full").font(.system(size: 22)).foregroundStyle(Clay.inkSoft).frame(width: FolderHeading.avatarSize, height: FolderHeading.avatarSize)
                 } else {
                     avatar().frame(width: FolderHeading.avatarSize, height: FolderHeading.avatarSize)
                 }
-                Text(folder.name).font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(Clay.ink).lineLimit(1)
+                Text(folder.name).font(.system(size: 21, weight: .bold, design: .rounded)).foregroundStyle(Clay.ink).lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 4)
                 if target {
                     Text("Drop to file here").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.white)
@@ -37,7 +37,7 @@ struct FolderHeading<Avatar: View>: View {
                         .padding(.horizontal, 7).padding(.vertical, 2).background(Capsule().fill(Clay.peach))
                 }
             }
-            .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 4)
+            .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 6)
             .background(RoundedRectangle(cornerRadius: 10).fill(target ? Clay.terracotta.opacity(0.22) : .clear))
             .overlay(RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(target ? Clay.terracotta : .clear, style: StrokeStyle(lineWidth: 2, dash: [5, 4])))

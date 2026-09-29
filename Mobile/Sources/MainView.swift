@@ -167,11 +167,11 @@ struct Row: View {
             Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 9, height: 9)
             // Groups read bigger than single chats (project heading > group > single chat).
             // Single chats sit a step to the right of groups (picture and name), never left of them.
-            GroupAvatar(ids: conv.participantIds, size: conv.isGroup ? 46 : 34)
-                .frame(width: conv.isGroup ? 46 : 46 + 14, alignment: .trailing)
+            GroupAvatar(ids: conv.participantIds, size: conv.isGroup ? 60 : 34)
+                .frame(width: conv.isGroup ? 60 : 60 + 12, alignment: .trailing)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(client.title(conv)).font(conv.isGroup ? .headline.bold() : .subheadline.weight(.semibold)).lineLimit(1)
+                    Text(client.title(conv)).font(conv.isGroup ? .title3.bold() : .subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(conv.isGroup ? 0.75 : 1)
                     if let e = conv.engine, e != .claude {
                         Text(e.label).font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.black))
@@ -188,11 +188,11 @@ struct Row: View {
                 } else if let why = conv.needsYou {
                     Text(why).font(.subheadline).foregroundStyle(Clay.ink).lineLimit(2)
                 } else {
-                    Text(preview).font(conv.isGroup ? .subheadline : .caption).foregroundStyle(.secondary).lineLimit(conv.isGroup ? 2 : 1)
+                    Text(preview).font(conv.isGroup ? .body : .caption).foregroundStyle(.secondary).lineLimit(conv.isGroup ? 2 : 1)
                 }
             }
         }
-        .padding(.vertical, conv.isGroup ? 3 : 0)
+        .padding(.vertical, conv.isGroup ? 6 : 0)
     }
 
     private var preview: String {

@@ -16,7 +16,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 400)
+                .navigationSplitViewColumnWidth(min: 260, ideal: 340, max: 440)
         } detail: {
             // The terminal lives in ChatView, as a fold-out row just above the text box.
             if let id = store.selectedId, store.index(of: id) != nil {
@@ -210,15 +210,15 @@ struct ConversationRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 8, height: 8).padding(.top, big ? 16 : 11)
+            Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 8, height: 8).padding(.top, big ? 22 : 11)
             // Single chats: smaller picture, right-aligned in the group's slot plus a step in, so their
             // picture and name always sit to the right of a group's, never left of it.
-            GroupAvatar(ids: conv.participantIds, size: big ? 42 : 30, photo: conv.photoPath)
-                .frame(width: big ? 42 : 42 + 14, alignment: .trailing)
+            GroupAvatar(ids: conv.participantIds, size: big ? 54 : 30, photo: conv.photoPath)
+                .frame(width: big ? 54 : 54 + 12, alignment: .trailing)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(store.title(for: conv)).zfont(big ? .headline : .subheadline).fontWeight(big ? .bold : .semibold)
-                        .lineLimit(1).foregroundStyle(Clay.ink)
+                    Text(store.title(for: conv)).zfont(big ? .title2 : .subheadline).fontWeight(big ? .bold : .semibold)
+                        .lineLimit(1).minimumScaleFactor(big ? 0.75 : 1).foregroundStyle(Clay.ink)
                     EngineBadge(conv: conv)
                     if conv.needsYou != nil { NeedsYouTag() }
                     Spacer()
@@ -239,11 +239,11 @@ struct ConversationRow: View {
                 } else if let why = conv.needsYou {
                     Text(why).zfont(.subheadline).foregroundStyle(Clay.ink).lineLimit(2)
                 } else {
-                    Text(preview).zfont(big ? .subheadline : .caption).foregroundStyle(Clay.inkSoft).lineLimit(big ? 2 : 1)
+                    Text(preview).zfont(big ? .body : .caption).foregroundStyle(Clay.inkSoft).lineLimit(big ? 2 : 1)
                 }
             }
         }
-        .padding(.vertical, big ? 4 : 1)
+        .padding(.vertical, big ? 7 : 1)
     }
 
     private var preview: String {
