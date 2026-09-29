@@ -211,8 +211,10 @@ struct ConversationRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 8, height: 8).padding(.top, big ? 16 : 11)
+            // Single chats: smaller picture, right-aligned in the group's slot plus a step in, so their
+            // picture and name always sit to the right of a group's, never left of it.
             GroupAvatar(ids: conv.participantIds, size: big ? 42 : 30, photo: conv.photoPath)
-                .padding(.leading, big ? 0 : 6)
+                .frame(width: big ? 42 : 42 + 14, alignment: .trailing)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(store.title(for: conv)).zfont(big ? .headline : .subheadline).fontWeight(big ? .bold : .semibold)

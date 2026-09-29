@@ -96,8 +96,10 @@ struct ModelOption: Codable, Hashable, Identifiable {
 }
 
 enum ModelCatalog {
+    /// What a Claude chat on "Default" runs: the alias, so it moves to each new Opus by itself.
+    static let claudeDefault = "opus"
     static let claude: [ModelOption] = [
-        ModelOption(id: "", label: "Default", note: "Whatever Claude Code normally uses"),
+        ModelOption(id: "", label: "Default", note: "The newest Opus"),
         ModelOption(id: "fable", label: "Fable", note: "Most capable"),
         ModelOption(id: "opus", label: "Opus", note: "Very capable"),
         ModelOption(id: "sonnet", label: "Sonnet", note: "Fast and smart"),

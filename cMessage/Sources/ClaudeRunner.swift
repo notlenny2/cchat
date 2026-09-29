@@ -95,7 +95,8 @@ enum ClaudeRunner {
                     "--append-system-prompt", systemPrompt,
                     "--permission-mode", fullAccess ? "bypassPermissions" : "acceptEdits"]
         if let sessionId { args += ["--resume", sessionId] + (fork ? ["--fork-session"] : []) }
-        if !model.isEmpty { args += ["--model", model] }
+        // "Default" = newest Opus. Left to itself Claude Code picks an older one; the alias always tracks the latest.
+        args += ["--model", model.isEmpty ? ModelCatalog.claudeDefault : model]
         // Lets the agent open pictures the user dragged in, which live outside the project folder.
         for d in extraDirs { args += ["--add-dir", d] }
 

@@ -166,8 +166,9 @@ struct Row: View {
         HStack(spacing: 10) {
             Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 9, height: 9)
             // Groups read bigger than single chats (project heading > group > single chat).
+            // Single chats sit a step to the right of groups (picture and name), never left of them.
             GroupAvatar(ids: conv.participantIds, size: conv.isGroup ? 46 : 34)
-                .padding(.leading, conv.isGroup ? 0 : 8)
+                .frame(width: conv.isGroup ? 46 : 46 + 14, alignment: .trailing)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(client.title(conv)).font(conv.isGroup ? .headline.bold() : .subheadline.weight(.semibold)).lineLimit(1)
