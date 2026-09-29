@@ -360,6 +360,21 @@ final class Store: ObservableObject {
         save()
     }
 
+    /// A brand-new chat with this contact (its own memory), even when one already exists.
+    /// Named "<Name> 2", "<Name> 3"... so it doesn't look like a copy of the first one in the list.
+    @discardableResult
+    func newChat(with c: Contact, engine: Engine = .claude, model: String? = nil) -> UUID {
+        let taken = Set(conversations.map { title(for: $0) })
+        var n = 2, name = c.name
+        if taken.contains(name) { while taken.contains("\(c.name) \(n)") { n += 1 }; name = "\(c.name) \(n)" }
+        let conv = Conversation(participantIds: [c.id], title: name == c.name ? nil : name,
+                                engine: engine == .claude ? nil : engine, model: (model?.isEmpty ?? true) ? nil : model)
+        conversations.append(conv)
+        selectedId = conv.id
+        save()
+        return conv.id
+    }
+
     func openGroup(_ ids: [UUID], title: String?, engine: Engine = .claude, model: String? = nil) {
         if ids.count == 1, let c = contact(ids[0]) { openChat(with: c, engine: engine, model: model); return }
         let conv = Conversation(participantIds: ids, title: title?.isEmpty == true ? nil : title,

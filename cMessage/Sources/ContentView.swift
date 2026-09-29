@@ -72,9 +72,10 @@ struct ContentView: View {
                     FolderHeading(folder: f, open: !folded.contains(f.id), target: folderTarget == f.id) {
                         withAnimation(.easeOut(duration: 0.15)) { foldedFolders = ChatFolders.toggle(f.id, in: foldedFolders) }
                     } avatar: {
-                        GroupAvatar(ids: f.project.map { [$0] } ?? [], size: 22)
+                        GroupAvatar(ids: f.project.map { [$0] } ?? [], size: FolderHeadingSize.avatar)
                     }
                     .selectionDisabled()
+                    .contextMenu { headingMenu(f) }
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
                     .dropDestination(for: String.self) { items, _ in
@@ -138,6 +139,26 @@ struct ContentView: View {
             .listRowBackground(dropTarget == c.id ? RoundedRectangle(cornerRadius: 8).fill(Palette.blue.opacity(0.25)) : nil)
     }
 
+    /// Right-click a project heading: start a brand-new chat that lives under it.
+    @ViewBuilder private func headingMenu(_ f: ChatFolders.Folder) -> some View {
+        if let p = store.contact(f.project) {
+            Button("New Chat") { startFresh(p, in: f.id) }
+            let subs = store.subContacts(of: p.id)
+            if !subs.isEmpty {
+                Menu("New Chat With") {
+                    ForEach(subs) { s in Button(store.displayName(s)) { startFresh(s, in: f.id) } }
+                }
+            }
+            Divider()
+        }
+        Button("New Message…") { showNew = true }
+    }
+
+    private func startFresh(_ c: Contact, in folder: String) {
+        withAnimation { _ = store.newChat(with: c) }
+        if ChatFolders.folded(foldedFolders).contains(folder) { foldedFolders = ChatFolders.toggle(folder, in: foldedFolders) }
+    }
+
     @ViewBuilder private func chatMenu(_ c: Conversation) -> some View {
         Button(c.isPinned ? "Unpin" : "Pin") { withAnimation { store.togglePin(c.id) } }
         Button("Rename…") { newName = store.title(for: c); renaming = c }
@@ -184,13 +205,18 @@ struct ConversationRow: View {
     @EnvironmentObject var store: Store
     let conv: Conversation
 
+    /// Groups read bigger than single chats (project heading > group > single chat).
+    private var big: Bool { conv.isGroup }
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 8, height: 8).padding(.top, 16)
-            GroupAvatar(ids: conv.participantIds, size: 40, photo: conv.photoPath)
+            Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 8, height: 8).padding(.top, big ? 16 : 11)
+            GroupAvatar(ids: conv.participantIds, size: big ? 42 : 30, photo: conv.photoPath)
+                .padding(.leading, big ? 0 : 6)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(store.title(for: conv)).zfont(.headline).lineLimit(1).foregroundStyle(Clay.ink)
+                    Text(store.title(for: conv)).zfont(big ? .headline : .subheadline).fontWeight(big ? .bold : .semibold)
+                        .lineLimit(1).foregroundStyle(Clay.ink)
                     EngineBadge(conv: conv)
                     if conv.needsYou != nil { NeedsYouTag() }
                     Spacer()
@@ -211,11 +237,11 @@ struct ConversationRow: View {
                 } else if let why = conv.needsYou {
                     Text(why).zfont(.subheadline).foregroundStyle(Clay.ink).lineLimit(2)
                 } else {
-                    Text(preview).zfont(.subheadline).foregroundStyle(Clay.inkSoft).lineLimit(2)
+                    Text(preview).zfont(big ? .subheadline : .caption).foregroundStyle(Clay.inkSoft).lineLimit(big ? 2 : 1)
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, big ? 4 : 1)
     }
 
     private var preview: String {

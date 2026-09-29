@@ -269,7 +269,9 @@ final class RemoteServer: ObservableObject {
         case .open:
             if let id = req.contact, let c = store.contact(id) {
                 let before = store.selectedId
-                store.openChat(with: c, engine: Engine(rawValue: req.text ?? "") ?? .claude, model: req.model)
+                let engine = Engine(rawValue: req.text ?? "") ?? .claude
+                if req.fresh == true { store.newChat(with: c, engine: engine, model: req.model) }
+                else { store.openChat(with: c, engine: engine, model: req.model) }
                 res.convId = store.selectedId
                 store.selectedId = before
             } else { res.ok = false }

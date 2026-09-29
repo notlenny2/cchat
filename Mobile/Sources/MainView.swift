@@ -65,7 +65,18 @@ struct MainView: View {
                 FolderHeading(folder: f, open: !folded.contains(f.id), target: folderTarget == f.id) {
                     withAnimation(.easeOut(duration: 0.15)) { foldedFolders = ChatFolders.toggle(f.id, in: foldedFolders) }
                 } avatar: {
-                    GroupAvatar(ids: f.project.map { [$0] } ?? [], size: 22)
+                    GroupAvatar(ids: f.project.map { [$0] } ?? [], size: FolderHeadingSize.avatar)
+                }
+                .contextMenu {
+                    if let p = f.project {
+                        Button { startFresh(p, in: f.id) } label: { Label("New Chat", systemImage: "square.and.pencil") }
+                        let subs = (client.snapshot?.contacts ?? []).filter { $0.parentId == p }
+                        if !subs.isEmpty {
+                            Menu {
+                                ForEach(subs) { s in Button(s.name) { startFresh(s.id, in: f.id) } }
+                            } label: { Label("New Chat With", systemImage: "person.crop.circle.badge.plus") }
+                        }
+                    }
                 }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -93,6 +104,12 @@ struct MainView: View {
                 ProgressView("Reaching \(client.pairing?.macName ?? "your Mac")…")
             }
         }
+    }
+
+    /// Long-press a project heading > New Chat: a brand-new chat under that project, opened right away.
+    private func startFresh(_ contact: UUID, in folder: String) {
+        if ChatFolders.folded(foldedFolders).contains(folder) { foldedFolders = ChatFolders.toggle(folder, in: foldedFolders) }
+        Task { if let id = await client.openChat(with: contact, fresh: true) { selected = id } }
     }
 
     private func row(_ c: Conversation) -> some View {
@@ -148,10 +165,12 @@ struct Row: View {
     var body: some View {
         HStack(spacing: 10) {
             Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 9, height: 9)
-            GroupAvatar(ids: conv.participantIds, size: 46)
+            // Groups read bigger than single chats (project heading > group > single chat).
+            GroupAvatar(ids: conv.participantIds, size: conv.isGroup ? 46 : 34)
+                .padding(.leading, conv.isGroup ? 0 : 8)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(client.title(conv)).font(.headline).lineLimit(1)
+                    Text(client.title(conv)).font(conv.isGroup ? .headline.bold() : .subheadline.weight(.semibold)).lineLimit(1)
                     if let e = conv.engine, e != .claude {
                         Text(e.label).font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.black))
@@ -168,11 +187,11 @@ struct Row: View {
                 } else if let why = conv.needsYou {
                     Text(why).font(.subheadline).foregroundStyle(Clay.ink).lineLimit(2)
                 } else {
-                    Text(preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                    Text(preview).font(conv.isGroup ? .subheadline : .caption).foregroundStyle(.secondary).lineLimit(conv.isGroup ? 2 : 1)
                 }
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, conv.isGroup ? 3 : 0)
     }
 
     private var preview: String {

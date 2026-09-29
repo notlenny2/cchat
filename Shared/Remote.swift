@@ -101,6 +101,8 @@ struct RPCRequest: Codable {
     var to: String? = nil
     /// `ask`: wait for the agents to answer and return what they said.
     var wait: Bool? = nil
+    /// `open`: start a brand-new chat instead of reopening the existing one. (Older Macs ignore it.)
+    var fresh: Bool? = nil
     /// `team`: which team members to call in, by name.
     var names: [String]? = nil
     /// `send`: pictures from the phone's camera or photo library, as JPEG.

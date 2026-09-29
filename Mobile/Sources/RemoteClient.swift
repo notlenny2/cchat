@@ -141,8 +141,10 @@ final class RemoteClient: ObservableObject {
         try? await call(RPCRequest(op: .merge, conv: source, target: target)).convId
     }
 
-    func openChat(with contact: UUID, engine: Engine = .claude, model: String = "") async -> UUID? {
-        try? await call(RPCRequest(op: .open, contact: contact, text: engine.rawValue, model: model)).convId
+    func openChat(with contact: UUID, engine: Engine = .claude, model: String = "", fresh: Bool = false) async -> UUID? {
+        var r = RPCRequest(op: .open, contact: contact, text: engine.rawValue, model: model)
+        if fresh { r.fresh = true }
+        return try? await call(r).convId
     }
 
     func newProject(_ name: String, engine: Engine, model: String) async -> UUID? {
