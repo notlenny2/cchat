@@ -1,6 +1,6 @@
 # cChat
 
-iMessage, but every contact is a [Claude Code](https://claude.com/claude-code) agent.
+iMessage, but every contact is a coding agent: [Claude Code](https://claude.com/claude-code), Codex, Gemini CLI or Grok, picked per chat.
 
 Each project folder is a contact. Under a project you can add sub-contacts with their own persona
 and their own memory ("Website UX", "Game Director"). You text them like people. You only ever
@@ -8,21 +8,20 @@ see their plain-English replies, never code or tool output.
 
 ![A chat with a project: it built a page and shows a picture of it](docs/screenshot-chat.png)
 
-cChat is a free side project. It isn't made by or affiliated with Anthropic; it runs the Claude Code
-you install yourself, signed in with your own Claude account, so usage counts against your own plan.
+cChat is a free side project. It isn't made by or affiliated with Anthropic, OpenAI, Google or xAI; it runs the
+agent tools you install and sign in to yourself, so usage counts against your own plans.
 
 ## Getting started
 1. Download `cChat-<version>-mac.zip` from [Releases](https://github.com/notlenny2/cchat/releases/latest),
    unzip it and drag cChat into Applications. (Or build it yourself, below.)
-2. Open it. The welcome screen checks for Claude Code, offers to install it with Anthropic's official
-   installer, and opens Anthropic's own sign-in in Terminal. cChat never sees your login.
+2. Open it. The welcome screen checks for your agent tools (Claude Code, Codex, Gemini CLI, Grok Build),
+   offers to install any of them with its maker's official installer, and opens that maker's own sign-in in
+   Terminal. cChat never sees your login. One is enough to start; add the others any time in Settings.
 3. Pick the folder your projects live in (default `~/projects`). Each folder in it can become a contact.
 4. Text a project. It answers in plain English.
 
-Codex (OpenAI) is optional: sign in to the `codex` CLI and you can pick it per chat.
-
 ## What it does
-- **Memory per chat.** Each contact keeps its own Claude Code session in every chat it's in.
+- **Memory per chat.** Each contact keeps its own agent session in every chat it's in.
   Long memories are condensed automatically so chats stay quick and don't burn through your plan.
 - **Group chats.** Drag one chat onto another to make a group. Every agent brings what it knew from its
   own chat. Text the group and a quick, cheap model picks the agent best suited to answer, or `@name`
@@ -32,7 +31,7 @@ Codex (OpenAI) is optional: sign in to the `codex` CLI and you can pick it per c
 - **"Needs you."** When an agent is stuck waiting on your decision, its chat is flagged and the Dock
   icon shows a count.
 - **Pictures and video.** Drop pictures into a chat; agents can show you pictures and videos back.
-- **Claude or Codex, any model,** picked per chat.
+- **Claude Code, Codex, Gemini or Grok, any model,** picked per chat. Mix engines in one group.
 - **Next-step suggestions.** Every reply comes with two or three tap-to-send ideas for what to say next.
 - **Usage meter.** See how much of your Claude and Codex limits you've used, for the next few hours and the
   week, right under the chat list. Tap it to fold it down.

@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cChat: iMessage, but every contact is a Claude Code agent</title>
-<meta name="description" content="A free Mac app. Text your projects like people. Each folder is a contact, each agent keeps its memory, and you only ever see plain-English replies.">
+<title>cChat: iMessage, but every contact is a coding agent</title>
+<meta name="description" content="A free Mac app. Text your projects like people. Claude Code, Codex, Gemini or Grok behind every contact, each with its own memory, and you only ever see plain English.">
 <link rel="icon" href="icon.png">
 <meta property="og:title" content="cChat">
-<meta property="og:description" content="iMessage, but every contact is a Claude Code agent. Free Mac app.">
+<meta property="og:description" content="iMessage, but every contact is a coding agent. Claude Code, Codex, Gemini or Grok. Free Mac app.">
 <meta property="og:image" content="https://notlenny2.github.io/cchat/screenshot-chat.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
@@ -125,6 +125,10 @@
   .chips { display: flex; gap: 8px; flex-wrap: wrap; align-self: flex-start; margin-top: 4px; }
   .chip { font-size: 14px; padding: 7px 13px; border-radius: 999px; background: var(--peach); color: var(--ink); box-shadow: var(--lip); }
 
+  .engines { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-bottom: 8px; }
+  .engine { padding: 10px 18px; border-radius: 999px; background: var(--cream); font-weight: 700; font-size: 16px; box-shadow: var(--shadow), var(--lip); }
+  .engine.soon { background: transparent; box-shadow: none; color: var(--ink-soft); font-weight: 500; }
+
   /* features */
   .features { padding: 20px 0 56px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
@@ -171,8 +175,8 @@
 <section class="hero">
   <div class="wrap">
     <img class="icon" src="icon.png" alt="cChat icon: two clay speech bubbles" width="168" height="168">
-    <h1>iMessage, but every contact is a <em>Claude Code</em> agent.</h1>
-    <p class="lede">A free Mac app. Text your projects like people. Each folder is a contact, each agent remembers, and you only ever see plain English. Never code.</p>
+    <h1>iMessage, but every contact is a <em>coding agent</em>.</h1>
+    <p class="lede">A free Mac app. Text your projects like people. Claude Code, Codex, Gemini or Grok behind every contact, each one remembers, and you only ever see plain English. Never code.</p>
     <a class="cta" href="https://github.com/notlenny2/cchat/releases/latest" id="download">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
       Download for Mac
@@ -205,7 +209,10 @@
 
 <section class="features">
   <div class="wrap">
-    <h2>What you get</h2>
+    <h2>Bring your own agent</h2>
+    <p class="sub">cChat runs the coding tool you already use and sign in to. Pick one per chat, mix them in a group, switch models mid-conversation.</p>
+    <div class="engines"><span class="engine">Claude Code</span><span class="engine">Codex</span><span class="engine">Gemini CLI</span><span class="engine">Grok Build</span><span class="engine soon">more coming</span></div>
+    <h2 style="margin-top:56px">What you get</h2>
     <p class="sub">Everything a real messaging app has, pointed at your projects.</p>
     <div class="grid">
       <div class="clay card"><div class="dot">🧠</div><h3>Memory that lasts</h3><p>Every contact remembers every chat it's in. Long memories tidy themselves so replies stay quick and your plan lasts longer.</p></div>
@@ -214,7 +221,7 @@
       <div class="clay card"><div class="dot">🔔</div><h3>"Needs you"</h3><p>When an agent is waiting on your decision, the chat gets flagged and the Dock icon shows a count. Nothing slips.</p></div>
       <div class="clay card"><div class="dot">🖼️</div><h3>Pictures and video</h3><p>Drop a screenshot in. Get a picture or a video back. Agents can show you what they made, right in the bubble.</p></div>
       <div class="clay card"><div class="dot">📱</div><h3>iPhone and iPad <span style="font-size:12px;color:var(--terra);vertical-align:middle">SOON</span></h3><p>Link your phone and keep texting your projects from the couch. Your Mac stays the brain; the phone is a remote. Phone app coming.</p></div>
-      <div class="clay card"><div class="dot">🔀</div><h3>Any engine, any model</h3><p>Claude Code, Codex, Gemini or Grok, picked per chat. Switch models mid-conversation.</p></div>
+      
       <div class="clay card"><div class="dot">📊</div><h3>Usage meter</h3><p>See how much of your Claude and Codex limits you've used, for the next few hours and the week, and when they refill.</p></div>
       <div class="clay card"><div class="dot">🔍</div><h3>Show the work</h3><p>Curious? Fold open any reply to see every step the agent took. Close it and it's plain English again.</p></div>
     </div>
@@ -234,9 +241,9 @@
   <div class="wrap">
     <h2>Good to know</h2>
     <div class="clay">
-      <details><summary>What do I need?</summary><p>A Mac on macOS 14 or newer and a Claude account. cChat's welcome screen installs Claude Code with Anthropic's official installer and opens Anthropic's own sign-in. cChat never sees your login.</p></details>
-      <details><summary>Does it cost anything?</summary><p>cChat is free. It runs the Claude Code you install yourself, so usage counts against your own Claude plan. Codex, Gemini and Grok are optional and use their own sign-ins.</p></details>
-      <details><summary>Is this made by Anthropic?</summary><p>No. cChat is an independent side project and isn't affiliated with Anthropic, OpenAI, Google or xAI. It just talks to the command-line tools they publish.</p></details>
+      <details><summary>What do I need?</summary><p>A Mac on macOS 14 or newer and an account with at least one of Claude, OpenAI, Google or xAI. cChat's welcome screen installs the tool with its maker's official installer and opens their own sign-in. cChat never sees your login.</p></details>
+      <details><summary>Does it cost anything?</summary><p>cChat is free. It runs the agent tools you install and sign in to yourself, so usage counts against whichever plans you already have. Use one or all four.</p></details>
+      <details><summary>Who makes it?</summary><p>One person, as a side project. cChat isn't affiliated with Anthropic, OpenAI, Google or xAI. It just talks to the command-line tools they publish.</p></details>
       <details><summary>Where do my chats live?</summary><p>On your Mac, in your own Application Support folder, backed up hourly. Nothing goes through a server of ours. There isn't one.</p></details>
       <details><summary>Can agents break things?</summary><p>By default an agent can edit files in its own project and nothing more. Anything riskier is blocked and shown as a gray note. A "Full access" switch exists per contact, off by default, with an orange warning.</p></details>
     </div>
@@ -246,7 +253,7 @@
 <footer>
   <div class="wrap">
     <a href="https://github.com/notlenny2/cchat">GitHub</a> · <a href="https://github.com/notlenny2/cchat/releases">All releases</a> · <a href="https://github.com/notlenny2/cchat/issues">Report a problem</a><br>
-    MIT licensed. Not affiliated with Anthropic.
+    MIT licensed. Not affiliated with Anthropic, OpenAI, Google or xAI.
   </div>
 </footer>
 
