@@ -23,6 +23,7 @@ enum WindowRescue {
 struct CMessageApp: App {
     @StateObject private var store = Store()
     @AppStorage(Zoom.key) private var zoom = 1.0
+    @State private var splash = true
 
     var body: some Scene {
         WindowGroup("cChat") {
@@ -32,6 +33,8 @@ struct CMessageApp: App {
                 .fontDesign(.rounded)
                 .tint(Clay.terracotta)
                 .frame(minWidth: 760, minHeight: 480)
+                // The clay moment at launch: the icon pressed together, then it melts into the chats. Skippable.
+                .overlay { if splash { SplashOverlay { splash = false } } }
                 .onAppear {
                     Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
