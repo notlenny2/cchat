@@ -1,9 +1,13 @@
 // Show the Work: a Claude (Haiku) turn and a Codex turn that each have to look at files; the live log while it
 // runs, then the folded log under the reply, opened.
+import os from 'node:os';
+import path from 'node:path';
+// Test projects go in a throwaway folder in the user's home, never their real projects folder.
+const ROOT = JSON.stringify(path.join(os.homedir(), 'cchat-test', 'projects'));
 export default async ({ js, shot, sleep, until, log }) => {
   await until(`!!document.querySelector('#modal-back:not([hidden]) .status')`, 30);
   await sleep(1000);
-  await js(`S.projectsRoot='C:\\\\Users\\\\you\\\\cchat-test\\\\projects'; S.userName='Sam'; [...document.querySelectorAll('#modal button')].find(b=>b.textContent==='Start texting').click()`);
+  await js(`S.projectsRoot=${ROOT}; S.userName='Sam'; [...document.querySelectorAll('#modal button')].find(b=>b.textContent==='Start texting').click()`);
   await sleep(500);
   await js(`document.querySelector('#empty input').value='Fig Jam'; [...document.querySelectorAll('#empty button')].find(b=>b.textContent==='Start').click()`);
   await until(`!document.querySelector('#chat').hidden`, 20);

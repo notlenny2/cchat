@@ -1,10 +1,14 @@
 // First run, new project, a 1:1 chat with memory across two turns (Haiku to keep it cheap).
+import os from 'node:os';
+import path from 'node:path';
+// Test projects go in a throwaway folder in the user's home, never their real projects folder.
+const ROOT = JSON.stringify(path.join(os.homedir(), 'cchat-test', 'projects'));
 export default async ({ js, shot, sleep, until, log }) => {
   await until(`!!document.querySelector('#modal-back:not([hidden]) .status')`, 30);
   await sleep(1500);
   await shot('1-welcome');
   log('welcome:', await js(`document.querySelector('#modal').innerText.replace(/\\n+/g,' | ')`));
-  await js(`[...document.querySelectorAll('#modal input.field')][1].value='C:\\\\Users\\\\you\\\\cchat-test\\\\projects'; [...document.querySelectorAll('#modal input.field')][1].dispatchEvent(new Event('change')); S.userName='Sam';`);
+  await js(`[...document.querySelectorAll('#modal input.field')][1].value=${ROOT}; [...document.querySelectorAll('#modal input.field')][1].dispatchEvent(new Event('change')); S.userName='Sam';`);
   await js(`[...document.querySelectorAll('#modal button')].find(b=>b.textContent==='Start texting').click()`);
   await sleep(500);
   await shot('2-empty');
