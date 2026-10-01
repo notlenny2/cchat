@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cChat</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="side-top">
+      <div class="brand">cChat</div>
+      <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
+      <button class="icon-btn" id="btn-new" title="New message">✎</button>
+    </div>
+    <input id="search" class="search" placeholder="Search" autocomplete="off">
+    <div id="chat-list"></div>
+  </aside>
+  <main id="main">
+    <div id="empty" class="empty"></div>
+    <section id="chat" hidden>
+      <header id="chat-header"></header>
+      <div id="transcript"></div>
+      <div id="chips"></div>
+      <div id="pending-pics"></div>
+      <form id="composer">
+        <textarea id="input" rows="1" placeholder="Text"></textarea>
+        <button id="send" type="submit" title="Send">↑</button>
+      </form>
+    </section>
+    <div id="drop-hint" hidden>Drop pictures to send them</div>
+  </main>
+</div>
+<div id="modal-back" hidden><div id="modal"></div></div>
+<script src="app.js"></script>
+</body>
+</html>
