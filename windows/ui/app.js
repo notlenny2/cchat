@@ -870,6 +870,74 @@ T.event.listen('turn', ({ payload }) => {
 const stepLabel = (tool) => ({ Read: 'Reading', Edit: 'Editing', Write: 'Writing', Bash: 'Running something', Grep: 'Searching', Glob: 'Looking around',
   WebSearch: 'Searching the web', WebFetch: 'Reading a page', Task: 'Sending off a helper', command_execution: 'Running something', file_change: 'Editing', reasoning: 'Thinking' }[tool] || 'Working');
 
+// MARK: usage meter (bottom of the chat list): how much of each plan is used, as Claude and Codex report it.
+// Claude's numbers ride along with every reply; Codex's are read from its own logs every minute.
+const usage = JSON.parse(localStorage.getItem('usage') || '{}');
+const setUsage = (u) => { usage[u.engine] = u; localStorage.setItem('usage', JSON.stringify(usage)); renderUsage(); };
+T.event.listen('usage', ({ payload }) => setUsage(payload));
+
+function renderUsage() {
+  const box = $('#usage');
+  const plans = [['Claude', usage.claude], ['Codex', usage.codex]].filter(([, u]) => u);
+  box.hidden = !plans.length;
+  if (!plans.length) return;
+  const folded = localStorage.getItem('usageFolded') === '1';
+  // Past its reset time a limit has refilled, even if nobody has asked since.
+  const cur = (w) => (w ? (w.resetsAt && w.resetsAt * 1000 < Date.now() ? 0 : Math.min(Math.max(w.used, 0), 1)) : 0);
+  const tone = (v) => (v >= 0.9 ? 'red' : v >= 0.7 ? 'orange' : '');
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  box.replaceChildren();
+  box.className = 'clay' + (folded ? ' folded' : '');
+  const top = el('div', 'u-top');
+  if (folded) {
+    for (const [name, u] of plans) {
+      const v = Math.max(cur(u.session), cur(u.week));
+      const fuller = cur(u.week) > cur(u.session) ? u.week : u.session;
+      const s = el('span', 'u-sum');
+      s.append(el('i', 'u-dot ' + tone(v)), `${name} ${pct(v)}`);
+      if (fuller?.resetsAt && fuller.resetsAt * 1000 > Date.now()) s.title = `Resets ${when(fuller.resetsAt)}`;
+      top.append(s);
+    }
+  } else top.append(el('span', 'u-title', 'Usage'));
+  top.append(el('span', 'u-chev', folded ? '▴' : '▾'));
+  box.append(top);
+  if (!folded) {
+    for (const [name, u] of plans) {
+      const r = el('div', 'u-row');
+      r.title = `As of ${new Date(u.asOf * 1000).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`;
+      r.append(el('div', 'u-name', name));
+      for (const [label, w] of [['Next few hours', u.session], ['This week', u.week]]) {
+        if (!w) continue;
+        const v = cur(w);
+        const head = el('div', 'u-head'); head.append(el('span', null, label), el('span', null, pct(v)));
+        const track = el('div', 'u-track'); const fill = el('div', 'u-fill ' + tone(v));
+        fill.style.width = `max(4px, ${v * 100}%)`; track.append(fill);
+        r.append(head, track);
+        // Always shown: knowing when it refills matters as much as how full it is.
+        if (w.resetsAt) r.append(el('div', 'u-reset', w.resetsAt * 1000 > Date.now() ? `Resets ${when(w.resetsAt)} · ${countdown(w.resetsAt)}` : 'Refilled'));
+      }
+      box.append(r);
+    }
+  }
+}
+$('#usage').onclick = () => { localStorage.setItem('usageFolded', localStorage.getItem('usageFolded') === '1' ? '0' : '1'); renderUsage(); };
+
+function when(secs) {
+  const d = new Date(secs * 1000);
+  const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? `at ${t}` : `${d.toLocaleDateString([], { weekday: 'long' })} ${t}`;
+}
+function countdown(secs) {
+  const s = Math.floor(secs - Date.now() / 1000);
+  if (s < 3600) return `in ${Math.max(1, Math.floor(s / 60))}m`;
+  if (s < 86400) return `in ${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  const days = Math.round(s / 86400);
+  return `in ${days} day${days === 1 ? '' : 's'}`;
+}
+async function pollCodex() { const u = await invoke('codex_usage').catch(() => null); if (u) setUsage(u); else renderUsage(); }
+pollCodex();
+setInterval(pollCodex, 60_000);
+
 T.event.listen('tauri://drag-enter', () => { if (selected) $('#drop-hint').hidden = false; });
 T.event.listen('tauri://drag-leave', () => { $('#drop-hint').hidden = true; });
 T.event.listen('tauri://drag-drop', async ({ payload }) => {

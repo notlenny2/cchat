@@ -299,6 +299,7 @@ fn run_claude(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
         let Ok(v) = serde_json::from_str::<Value>(line) else { return };
         match v["type"].as_str() {
             Some("system") => if let Some(s) = v["session_id"].as_str() { out.session = Some(s.into()) },
+            Some("rate_limit_event") => if let Some(u) = claude_usage(&v) { let _ = app.emit("usage", u); },
             Some("assistant") => {
                 if let Some(parts) = v["message"]["content"].as_array() {
                     for p in parts {
@@ -335,6 +336,84 @@ fn run_claude(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
         }
     }
     out
+}
+
+// MARK: usage
+// How much of the user's plans is used up, as the AI companies report it. Nothing here signs in or touches
+// credentials: Claude Code prints the numbers on every turn (`rate_limit_event`), and Codex writes them into
+// its own session logs in %USERPROFILE%\.codex\sessions.
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct UsageWindow {
+    /// 0...1
+    used: f64,
+    /// Seconds since 1970.
+    resets_at: Option<f64>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PlanUsage {
+    engine: &'static str,
+    /// The short rolling limit (5 hours), and the weekly one.
+    session: Option<UsageWindow>,
+    week: Option<UsageWindow>,
+    /// Seconds since 1970.
+    as_of: f64,
+}
+
+fn claude_usage(event: &Value) -> Option<PlanUsage> {
+    let w = &event["rate_limit_info"]["unifiedWindows"];
+    let window = |k: &str| w[k]["utilization"].as_f64().map(|u| UsageWindow { used: u, resets_at: w[k]["resetsAt"].as_f64() });
+    let u = PlanUsage { engine: "claude", session: window("five_hour"), week: window("seven_day"), as_of: now_secs() as f64 };
+    (u.session.is_some() || u.week.is_some()).then_some(u)
+}
+
+/// The newest numbers Codex logged, from any Codex session on this PC (in cChat or not). Codex files sessions
+/// under year\month\day folders; only the latest two days are looked at.
+#[tauri::command]
+async fn codex_usage() -> Option<PlanUsage> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let dirs = |p: &Path| {
+            let mut v: Vec<PathBuf> = fs::read_dir(p).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
+            v.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+            v
+        };
+        let mut days = Vec::new();
+        'outer: for y in dirs(&home().join(".codex").join("sessions")) {
+            for m in dirs(&y) {
+                for d in dirs(&m) { days.push(d); if days.len() == 2 { break 'outer; } }
+            }
+        }
+        let mut files: Vec<(SystemTime, PathBuf)> = days.iter()
+            .flat_map(|d| fs::read_dir(d).map(|r| r.flatten().map(|e| e.path()).collect::<Vec<_>>()).unwrap_or_default())
+            .filter(|p| p.extension().map(|e| e == "jsonl").unwrap_or(false))
+            .map(|p| (fs::metadata(&p).and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH), p))
+            .collect();
+        files.sort_by(|a, b| b.0.cmp(&a.0));
+        files.iter().take(6).find_map(|(t, p)| codex_limits(p, t.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)))
+    }).await.ok().flatten()
+}
+
+fn codex_limits(file: &Path, as_of: f64) -> Option<PlanUsage> {
+    use std::io::{Seek, SeekFrom};
+    let mut f = fs::File::open(file).ok()?;
+    let len = f.metadata().ok()?.len();
+    f.seek(SeekFrom::Start(len.saturating_sub(262_144))).ok()?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).ok()?;
+    for line in String::from_utf8_lossy(&buf).lines().rev() {
+        if !line.contains("\"rate_limits\"") { continue; }
+        let Ok(o) = serde_json::from_str::<Value>(line) else { continue };
+        let rl = if o["payload"]["rate_limits"].is_object() { &o["payload"]["rate_limits"] } else { &o["rate_limits"] };
+        if !rl.is_object() { continue; }
+        if let Some(id) = rl["limit_id"].as_str() { if id != "codex" { continue; } }
+        let window = |k: &str| rl[k]["used_percent"].as_f64().map(|p| UsageWindow { used: p / 100.0, resets_at: rl[k]["resets_at"].as_f64() });
+        let u = PlanUsage { engine: "codex", session: window("primary"), week: window("secondary"), as_of };
+        if u.session.is_some() || u.week.is_some() { return Some(u); }
+    }
+    None
 }
 
 // MARK: memory condensing
@@ -682,7 +761,7 @@ fn main() {
         .manage(Arc::new(Shared::default()))
         .invoke_handler(tauri::generate_handler![
             run_turn, stop_turn, quick, engines, open_setup, load_store, save_store,
-            list_projects, create_project, import_picture, import_media, open_media, condense
+            list_projects, create_project, import_picture, import_media, open_media, condense, codex_usage
         ])
         .run(tauri::generate_context!())
         .expect("cChat couldn't start");

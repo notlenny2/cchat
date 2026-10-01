@@ -139,3 +139,21 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 12px; border-radius: 8px; }
 .menu button:hover { background: var(--accent); color: #fff; }
 ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: rgba(var(--shadow), .2); border-radius: 5px; border: 3px solid transparent; background-clip: padding-box; }
+
+/* usage meter at the bottom of the chat list */
+#usage { margin: 0 12px 12px; padding: 10px 12px; border-radius: 14px; background-color: var(--cream); cursor: pointer; font-size: 12px; }
+#usage.folded { padding: 8px 12px; }
+#usage[hidden] { display: none; }
+.u-top { display: flex; align-items: center; gap: 10px; }
+.u-title { font-weight: 700; color: var(--ink-soft); }
+.u-chev { margin-left: auto; color: var(--ink-soft); font-size: 10px; }
+.u-sum { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.u-dot { width: 7px; height: 7px; border-radius: 4px; background: var(--accent); display: inline-block; }
+.u-row { margin-top: 8px; }
+.u-name { font-weight: 700; margin-bottom: 2px; }
+.u-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
+.u-track { height: 5px; border-radius: 3px; background: rgba(var(--shadow), .12); overflow: hidden; margin-top: 2px; }
+.u-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.u-fill.orange, .u-dot.orange { background: #e8932f; }
+.u-fill.red, .u-dot.red { background: #d9453b; }
+.u-reset { font-size: 10.5px; color: var(--ink-soft); opacity: .85; margin-top: 2px; }
