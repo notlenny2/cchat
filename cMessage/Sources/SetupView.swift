@@ -142,6 +142,7 @@ struct SetupView: View {
     @State private var gemini: ToolState = .checking
     @State private var grok: ToolState = .checking
     @State private var phoneLink = Prefs.phoneLink
+    @State private var awayFromHome = Prefs.awayFromHome
 
     private var welcome: Bool { onDone != nil }
 
@@ -242,8 +243,19 @@ struct SetupView: View {
                         }))
                     if phoneLink {
                         Button("Show Code to Scan") { NotificationCenter.default.post(name: .showPairing, object: nil) }
+                        if Relay.baseURL != nil {
+                            Toggle("Also reach this Mac away from home", isOn: Binding(
+                                get: { awayFromHome },
+                                set: { on in
+                                    awayFromHome = on
+                                    Prefs.awayFromHome = on
+                                    RemoteServer.shared.updateRelay()
+                                }))
+                        }
                     }
-                    Text("Works on the same Wi-Fi. Only a device that scanned your code can get in. Switching this off unlinks every device.")
+                    Text(Relay.baseURL != nil && awayFromHome
+                         ? "Works at home and anywhere your phone has signal. Away from home it goes through the cChat relay, which only ever passes along messages locked with your code; it can't read them. Only a device that scanned your code can get in. Switching linking off unlinks every device."
+                         : "Works on the same Wi-Fi. Only a device that scanned your code can get in. Switching this off unlinks every device.")
                         .font(.caption).foregroundStyle(Clay.inkSoft)
                 }
             }

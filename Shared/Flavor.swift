@@ -62,6 +62,12 @@ enum Prefs {
         set { d.set(newValue, forKey: "phoneLink") }
     }
 
+    /// Reach this Mac from anywhere through the cChat relay (on by default when linking is on and a relay exists).
+    static var awayFromHome: Bool {
+        get { d.object(forKey: "awayFromHome") as? Bool ?? true }
+        set { d.set(newValue, forKey: "awayFromHome") }
+    }
+
     /// The welcome screen has been finished. A personal build never shows it.
     static var setupDone: Bool {
         get { Flavor.personal || d.bool(forKey: "setupDone") }

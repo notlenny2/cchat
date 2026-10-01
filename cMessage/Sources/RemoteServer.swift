@@ -41,8 +41,25 @@ final class RemoteServer: ObservableObject {
         if key?.count != 32 { key = nil }
         // Linking is on unless it was switched off: make a key the first time so there's a code ready to scan.
         // Nobody gets in without that key; it only leaves this Mac inside the QR code.
+        RelayLink.shared.handler = { [weak self] body in
+            guard let self else { return (503, Data()) }
+            return await self.handle(body, peer: "relay")
+        }
+        // Paired agents come and go as key files; pick them up without a restart.
+        relayTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.updateRelay() }
+        }
         if key == nil && Prefs.phoneLink { newPairing(); return }
         if key != nil || !clientKeys().isEmpty { start() }
+        updateRelay()
+    }
+
+    private var relayTimer: Timer?
+
+    /// One relay socket per key that can talk to this Mac, when "away from home" is on and a relay is set up.
+    func updateRelay() {
+        guard Prefs.awayFromHome else { RelayLink.shared.stopAll(); return }
+        RelayLink.shared.update(keys: (key.map { [$0] } ?? []) + clientKeys().map(\.key))
     }
 
     /// Makes (or remakes) the pairing key. Remaking it disconnects every phone paired before.
@@ -56,6 +73,7 @@ final class RemoteServer: ObservableObject {
             Prefs.phoneLink = true
             Log.info("remote: new pairing key")
             start()
+            updateRelay()
         } catch { Log.error("remote: couldn't save key: \(error)") }
     }
 
@@ -64,12 +82,14 @@ final class RemoteServer: ObservableObject {
         key = nil
         Prefs.phoneLink = false
         listener?.cancel(); listener = nil; running = false
+        updateRelay()
         Log.info("remote: unpaired, server off")
     }
 
     var pairing: PairingInfo? {
         guard let key else { return nil }
-        return PairingInfo(key: key, hosts: Self.localHosts(), port: Remote.port, macName: Host.current().localizedName ?? "Mac")
+        return PairingInfo(key: key, hosts: Self.localHosts(), port: Remote.port, macName: Host.current().localizedName ?? "Mac",
+                           relay: Prefs.awayFromHome ? Relay.baseURL : nil)
     }
 
     /// LAN addresses first, then the Bonjour name, so the phone has something to try at home. The address on the
@@ -180,7 +200,7 @@ final class RemoteServer: ObservableObject {
 
     // MARK: Requests
 
-    private func handle(_ body: Data, peer: String) async -> (Int, Data) {
+    func handle(_ body: Data, peer: String) async -> (Int, Data) {
         guard let store else { return (401, Data()) }
         // The phone key first, then any paired agents. Whichever opens the request is who sent it.
         var candidates: [(name: String?, key: Data)] = key.map { [(nil, $0)] } ?? []

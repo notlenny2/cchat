@@ -16,11 +16,59 @@ enum Remote {
     static let longPollSeconds: TimeInterval = 25
 }
 
+/// Away from home the phone goes through the cChat relay (see relay/ in the repo). The relay only ever carries
+/// bodies already sealed with the pairing key. Both names it knows a Mac by are one-way HMACs of that key, so it
+/// can't recover the key, and nobody without the key can find the mailbox or answer as the Mac.
+enum Relay {
+    /// The public relay. `CCHAT_RELAY` (tests) or the `relayURL` default override it; empty = off.
+    static let builtIn = ""
+    static var baseURL: String? {
+        let s = ProcessInfo.processInfo.environment["CCHAT_RELAY"] ?? UserDefaults.standard.string(forKey: "relayURL") ?? builtIn
+        let t = s.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        guard let u = URL(string: t), u.scheme == "https" || (u.scheme == "http" && ["127.0.0.1", "localhost"].contains(u.host ?? "")) else { return nil }
+        return t
+    }
+    static func mailbox(_ key: Data) -> String { tag(key, "cchat relay mailbox v1") }
+    static func macToken(_ key: Data) -> String { tag(key, "cchat relay mac v1") }
+    private static func tag(_ key: Data, _ label: String) -> String {
+        Data(HMAC<SHA256>.authenticationCode(for: Data(label.utf8), using: SymmetricKey(data: key))).base64URL
+    }
+
+    /// One chunk on the relay socket: [4-byte header length][header JSON][bytes]. Socket messages max out at 1 MiB.
+    struct Frame: Codable { var id: String; var seq: Int; var last: Bool; var status: Int? }
+    static let chunk = 512 * 1024
+    static func frames(id: String, status: Int, body: Data) -> [Data] {
+        var out: [Data] = []
+        var off = 0, seq = 0
+        repeat {
+            let part = body.subdata(in: off..<min(body.count, off + chunk))
+            let last = off + chunk >= body.count
+            let head = (try? JSONEncoder().encode(Frame(id: id, seq: seq, last: last, status: status))) ?? Data()
+            var len = UInt32(head.count).bigEndian
+            var d = Data(bytes: &len, count: 4)
+            d.append(head); d.append(part)
+            out.append(d)
+            off += chunk; seq += 1
+        } while off < body.count
+        return out
+    }
+    static func parse(_ d: Data) -> (Frame, Data)? {
+        guard d.count >= 4 else { return nil }
+        let b = [UInt8](d.prefix(4))
+        let hl = Int(b[0]) << 24 | Int(b[1]) << 16 | Int(b[2]) << 8 | Int(b[3])
+        guard hl <= 1024, 4 + hl <= d.count,
+              let f = try? JSONDecoder().decode(Frame.self, from: d.subdata(in: d.startIndex + 4 ..< d.startIndex + 4 + hl)) else { return nil }
+        return (f, d.subdata(in: d.startIndex + 4 + hl ..< d.endIndex))
+    }
+}
+
 struct PairingInfo: Codable, Equatable {
     var key: Data
     var hosts: [String]
     var port: UInt16
     var macName: String
+    /// The relay this Mac uses, so the phone can reach it away from home. Optional: older pairings have none.
+    var relay: String? = nil
 
     /// `cmessage://pair?k=...&h=host1,host2&p=47800&n=Mac`
     var url: URL {
@@ -32,12 +80,12 @@ struct PairingInfo: Codable, Equatable {
             URLQueryItem(name: "h", value: hosts.joined(separator: ",")),
             URLQueryItem(name: "p", value: String(port)),
             URLQueryItem(name: "n", value: macName),
-        ]
+        ] + (relay.map { [URLQueryItem(name: "r", value: $0)] } ?? [])
         return c.url!
     }
 
-    init(key: Data, hosts: [String], port: UInt16, macName: String) {
-        self.key = key; self.hosts = hosts; self.port = port; self.macName = macName
+    init(key: Data, hosts: [String], port: UInt16, macName: String, relay: String? = nil) {
+        self.key = key; self.hosts = hosts; self.port = port; self.macName = macName; self.relay = relay
     }
 
     init?(url: URL) {
@@ -46,8 +94,10 @@ struct PairingInfo: Codable, Equatable {
         func v(_ n: String) -> String? { items.first { $0.name == n }?.value }
         guard let k = v("k").flatMap(Data.init(base64URL:)), k.count == 32,
               let h = v("h"), let p = v("p").flatMap(UInt16.init) else { return nil }
+        // Only an https relay (anything else in a scanned code is ignored).
+        let r = v("r").flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0.absoluteString : nil }
         self.init(key: k, hosts: h.split(separator: ",").map(String.init).filter { !$0.isEmpty },
-                  port: p, macName: v("n") ?? "Mac")
+                  port: p, macName: v("n") ?? "Mac", relay: r)
     }
 }
 

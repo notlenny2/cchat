@@ -16,6 +16,8 @@ struct ClientConfig: Codable {
     var key: Data
     var hosts: [String]
     var port: UInt16
+    /// Away from the cChat Mac's network: its relay. Optional, older configs have none.
+    var relay: String? = nil
 }
 
 func fail(_ s: String, _ code: Int32 = 1) -> Never {
@@ -53,7 +55,7 @@ if cmd == "pair" {
     do {
         try key.write(to: keyFile, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyFile.path)
-        let cfg = ClientConfig(name: name, key: key, hosts: ["127.0.0.1"] + args.dropFirst(), port: Remote.port)
+        let cfg = ClientConfig(name: name, key: key, hosts: ["127.0.0.1"] + args.dropFirst(), port: Remote.port, relay: Relay.baseURL)
         try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(cfg).write(to: configURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
@@ -70,8 +72,13 @@ guard let data = try? Data(contentsOf: configURL), let cfg = try? JSONDecoder().
 
 func call(_ req: RPCRequest, timeout: TimeInterval) async throws -> RPCResponse {
     var last: Error = URLError(.cannotConnectToHost)
-    for host in cfg.hosts {
-        var r = URLRequest(url: URL(string: "http://\(host):\(cfg.port)/rpc")!)
+    // Local addresses first, then the relay (CCHAT_RELAY overrides the config's).
+    var urls = cfg.hosts.compactMap { URL(string: "http://\($0):\(cfg.port)/rpc") }
+    if let base = ProcessInfo.processInfo.environment["CCHAT_RELAY"] ?? cfg.relay {
+        urls.append(URL(string: "\(base)/v1/m/\(Relay.mailbox(cfg.key))/rpc?t=\(Int(timeout))")!)
+    }
+    for url in urls {
+        var r = URLRequest(url: url)
         r.httpMethod = "POST"
         r.timeoutInterval = timeout
         r.httpBody = try Seal.close(req, key: cfg.key)

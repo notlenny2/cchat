@@ -17,6 +17,9 @@ final class RemoteClient: ObservableObject {
 
     private var loop: Task<Void, Never>?
     private var hostIndex = 0
+    /// Away from home: going through the relay because no home address answered.
+    @Published private(set) var viaRelay = false
+    private var relayBase: String? { pairing?.relay ?? Relay.baseURL }
     private var iconRequested = Set<UUID>()
     private lazy var session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
@@ -59,10 +62,14 @@ final class RemoteClient: ObservableObject {
     func start() {
         guard pairing != nil, loop == nil else { return }
         loop = Task { [weak self] in
-            // Start on an address that actually answers, not whichever was listed first.
-            if let p = self?.pairing, let i = await Self.firstReachable(p.hosts, port: p.port) { self?.hostIndex = i }
+            // Start on an address that actually answers, not whichever was listed first; else the relay.
+            await self?.pickRoute()
+            var cycles = 0
             while !Task.isCancelled {
                 guard let self else { return }
+                // On the relay, look for home every few minutes: the direct way is quicker when it's there.
+                cycles += 1
+                if self.viaRelay && cycles % 8 == 0 { await self.pickRoute() }
                 do {
                     let res = try await self.call(RPCRequest(op: .sync, since: self.snapshot?.version ?? -1))
                     if let s = res.snapshot {
@@ -73,16 +80,15 @@ final class RemoteClient: ObservableObject {
                 } catch is CancellationError {
                     return
                 } catch {
-                    var why = Self.describe(error)
-                    if let p = self.pairing, !p.hosts.isEmpty,
+                    var why = Self.describe(error, relay: self.viaRelay)
+                    if !self.viaRelay, self.relayBase == nil, let p = self.pairing, !p.hosts.isEmpty,
                        await Self.localNetworkDenied(host: p.hosts[self.hostIndex % p.hosts.count], port: p.port) {
                         why = "iPhone is blocking cChat from your home network. Turn on Settings > Privacy & Security > Local Network > cChat."
                     }
                     self.link = .offline(why)
                     // Try every address the Mac gave at once and keep whichever answers, instead of waiting out a
-                    // dead one (a Mac on Wi-Fi AND a cable can be reachable on only one of them).
-                    if let p = self.pairing, let i = await Self.firstReachable(p.hosts, port: p.port) { self.hostIndex = i }
-                    else { self.hostIndex += 1 }
+                    // dead one (a Mac on Wi-Fi AND a cable can be reachable on only one of them). None: the relay.
+                    await self.pickRoute()
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
                 }
             }
@@ -92,6 +98,18 @@ final class RemoteClient: ObservableObject {
     func stop() {
         loop?.cancel()
         loop = nil
+    }
+
+    /// Home address if one answers, otherwise the relay (when there is one), otherwise keep cycling home addresses.
+    private func pickRoute() async {
+        guard let p = pairing else { return }
+        if let i = await Self.firstReachable(p.hosts, port: p.port) {
+            hostIndex = i; viaRelay = false
+        } else if relayBase != nil {
+            viaRelay = true
+        } else {
+            hostIndex += 1; viaRelay = false
+        }
     }
 
     // MARK: Actions
@@ -211,13 +229,21 @@ final class RemoteClient: ObservableObject {
     // MARK: Transport
 
     private func call(_ req: RPCRequest) async throws -> RPCResponse {
-        guard let p = pairing, !p.hosts.isEmpty else { throw URLError(.userAuthenticationRequired) }
-        let host = p.hosts[hostIndex % p.hosts.count]
-        var r = URLRequest(url: URL(string: "http://\(host):\(p.port)/rpc")!)
+        guard let p = pairing else { throw URLError(.userAuthenticationRequired) }
+        let timeout: TimeInterval = req.op == .sync ? Remote.longPollSeconds + 15 : (req.op == .media || req.images != nil ? 180 : 15)
+        let url: URL
+        if viaRelay, let base = relayBase {
+            // The relay holds the request open for as long as we say, so it matches our own timeout.
+            url = URL(string: "\(base)/v1/m/\(Relay.mailbox(p.key))/rpc?t=\(Int(timeout))")!
+        } else {
+            guard !p.hosts.isEmpty else { throw URLError(.userAuthenticationRequired) }
+            url = URL(string: "http://\(p.hosts[hostIndex % p.hosts.count]):\(p.port)/rpc")!
+        }
+        var r = URLRequest(url: url)
         r.httpMethod = "POST"
         r.httpBody = try Seal.close(req, key: p.key)
         r.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        if req.op != .sync { r.timeoutInterval = req.op == .media || req.images != nil ? 180 : 15 }
+        r.timeoutInterval = timeout + 5
         let (data, resp) = try await session.data(for: r)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 { throw ClientError.rejected }
@@ -282,13 +308,16 @@ final class RemoteClient: ObservableObject {
         }
     }
 
-    private static func describe(_ e: Error) -> String {
+    private static func describe(_ e: Error, relay: Bool = false) -> String {
         switch e {
         case ClientError.rejected: return "Your Mac didn't recognize this device. Scan the code again."
+        case ClientError.http(503) where relay: return "Your Mac is offline or asleep. Wake it up and this will reconnect."
+        case ClientError.http(504) where relay: return "Your Mac didn't answer in time. Trying again."
+        case ClientError.http(429) where relay: return "Slowing down for a moment, then trying again."
         case ClientError.mismatch: return "Got a garbled answer from the Mac."
         case let u as URLError where u.code == .timedOut: return "Can't reach your Mac right now."
         case let u as URLError where [.cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet].contains(u.code):
-            return "Can't reach your Mac. Is it awake and on the same Wi-Fi?"
+            return relay ? "No internet connection right now." : "Can't reach your Mac. Is it awake and on the same Wi-Fi?"
         default: return "Can't reach your Mac right now."
         }
     }
