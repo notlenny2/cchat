@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cChat: iMessage, but every contact is a coding agent</title>
-<meta name="description" content="A free Mac app. Text your projects like people. Claude Code, Codex, Gemini or Grok behind every contact, each with its own memory, and you only ever see plain English.">
+<meta name="description" content="Free for Mac, in preview on Windows. Text your projects like people. Claude Code, Codex, Gemini or Grok behind every contact, each with its own memory, and you only ever see plain English.">
 <link rel="icon" href="icon.png">
 <meta property="og:title" content="cChat">
-<meta property="og:description" content="iMessage, but every contact is a coding agent. Claude Code, Codex, Gemini or Grok. Free Mac app.">
+<meta property="og:description" content="iMessage, but every contact is a coding agent. Claude Code, Codex, Gemini or Grok. Free for Mac, preview on Windows.">
 <meta property="og:image" content="https://notlenny2.github.io/cchat/screenshot-chat.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
@@ -89,6 +89,11 @@
   .cta:hover { transform: translateY(-2px); background: var(--terra-deep); }
   .cta:active { transform: translateY(1px); }
   .cta svg { width: 20px; height: 20px; }
+  .ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+  .cta.alt { background: var(--cream); color: var(--ink); }
+  .cta.alt:hover { background: var(--peach); }
+  .cta .tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--peach); color: var(--ink); }
+  .cta:not(.alt) .tag { background: rgba(255,255,255,.25); color: #fff; }
   .fine {
     margin-top: 14px; font-size: 14px; color: var(--ink-soft);
   }
@@ -176,12 +181,19 @@
   <div class="wrap">
     <img class="icon" src="icon.png" alt="cChat icon: two clay speech bubbles" width="168" height="168">
     <h1>iMessage, but every contact is a <em>coding agent</em>.</h1>
-    <p class="lede">A free Mac app. Text your projects like people. Claude Code, Codex, Gemini or Grok behind every contact, each one remembers, and you only ever see plain English. Never code.</p>
-    <a class="cta" href="https://github.com/notlenny2/cchat/releases/latest" id="download">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
-      Download for Mac
-    </a>
-    <p class="fine">Free and open source · macOS 14 or newer · Intel and Apple Silicon · <a href="https://github.com/notlenny2/cchat">Source on GitHub</a></p>
+    <p class="lede">Free for Mac, and now in preview on Windows. Text your projects like people. Claude Code, Codex, Gemini or Grok behind every contact, each one remembers, and you only ever see plain English. Never code.</p>
+    <div class="ctas">
+      <a class="cta" href="https://github.com/notlenny2/cchat/releases/latest" id="download">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
+        Download for Mac
+      </a>
+      <a class="cta alt" href="https://github.com/notlenny2/cchat/releases/tag/windows-v0.1.1" id="download-win">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
+        Download for Windows <span class="tag">PREVIEW</span>
+      </a>
+    </div>
+    <p class="fine">Free and open source · Mac: macOS 14 or newer, Intel and Apple Silicon · Windows: 10 or 11, 64-bit · <a href="https://github.com/notlenny2/cchat">Source on GitHub</a></p>
+    <p class="fine" id="win-note">The Windows preview isn't code-signed yet. If Windows says it "protected your PC", click More info, then Run anyway.</p>
   </div>
 </section>
 
@@ -241,10 +253,11 @@
   <div class="wrap">
     <h2>Good to know</h2>
     <div class="clay">
-      <details><summary>What do I need?</summary><p>A Mac on macOS 14 or newer and an account with at least one of Claude, OpenAI, Google or xAI. cChat's welcome screen installs the tool with its maker's official installer and opens their own sign-in. cChat never sees your login.</p></details>
+      <details><summary>What do I need?</summary><p>A Mac on macOS 14 or newer, or a PC on Windows 10 or 11, and an account with at least one of Claude, OpenAI, Google or xAI. cChat's welcome screen installs the tool with its maker's official installer and opens their own sign-in. cChat never sees your login.</p></details>
       <details><summary>Does it cost anything?</summary><p>cChat is free. It runs the agent tools you install and sign in to yourself, so usage counts against whichever plans you already have. Use one or all four.</p></details>
       <details><summary>Who makes it?</summary><p>One person, as a side project. cChat isn't affiliated with Anthropic, OpenAI, Google or xAI. It just talks to the command-line tools they publish.</p></details>
-      <details><summary>Where do my chats live?</summary><p>On your Mac, in your own Application Support folder, backed up hourly. Nothing goes through a server of ours. There isn't one.</p></details>
+      <details><summary>Where do my chats live?</summary><p>On your own computer (Application Support on a Mac, AppData on Windows), backed up hourly. Nothing goes through a server of ours. There isn't one.</p></details>
+      <details><summary>What works on Windows so far?</summary><p>Chats with memory, group chats, next-step suggestions, "needs you" flags, pictures, project folders, the usage meter and Show the Work, with Claude Code or Codex. Gemini, Grok, pinning and phone linking are still Mac only. Bugs go in <a href="https://github.com/notlenny2/cchat/issues">Issues</a>.</p></details>
       <details><summary>Can agents break things?</summary><p>By default an agent can edit files in its own project and nothing more. Anything riskier is blocked and shown as a gray note. A "Full access" switch exists per contact, off by default, with an orange warning.</p></details>
     </div>
   </div>
@@ -256,6 +269,15 @@
     MIT licensed. Not affiliated with Anthropic, OpenAI, Google or xAI.
   </div>
 </footer>
+
+<script>
+  // On a Windows PC, put the Windows button first and make it the bold one.
+  if (/Windows/i.test(navigator.userAgent)) {
+    var mac = document.getElementById('download'), win = document.getElementById('download-win');
+    mac.classList.add('alt'); win.classList.remove('alt');
+    win.parentNode.insertBefore(win, mac);
+  }
+</script>
 
 </body>
 </html>
