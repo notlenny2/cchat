@@ -57,6 +57,10 @@ targets:
     dependencies:
       # VideoPlayer crashes the app unless AVKit is linked by name (same as the Mac).
       - sdk: AVKit.framework
+    entitlements:
+      path: Mobile/cChatMobile.entitlements
+      properties:
+        aps-environment: development
     info:
       path: Mobile/Info-Public.plist
       properties:

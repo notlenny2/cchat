@@ -1,7 +1,9 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct CMessageMobileApp: App {
+    @UIApplicationDelegateAdaptor(PushDelegate.self) private var push
     @StateObject private var client = RemoteClient()
     @Environment(\.scenePhase) private var phase
 
@@ -19,10 +21,49 @@ struct CMessageMobileApp: App {
             .tint(Clay.terracotta)
             .onOpenURL { _ = client.pair(with: $0) }
             .onChange(of: phase) { _, p in
-                if p == .active { client.start() } else if p == .background { client.stop() }
+                if p == .active { client.start(); PushDelegate.ready(client) }
+                else if p == .background { client.wentAway(); client.stop() }
             }
-            .onAppear { client.start() }
+            .onChange(of: client.pairing != nil) { _, paired in if paired { PushDelegate.ready(client) } }
+            .onAppear { client.start(); PushDelegate.ready(client) }
         }
+    }
+}
+
+/// Notifications: ask once, hand Apple's address for this phone to the Mac, open the chat a tapped one is about.
+final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    @MainActor static weak var client: RemoteClient?
+
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    /// Linked and on screen: ask for permission (iOS only asks once) and get this phone's address.
+    @MainActor static func ready(_ client: RemoteClient) {
+        Self.client = client
+        UNUserNotificationCenter.current().setBadgeCount(0)
+        guard client.pairing != nil else { return }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            guard granted else { return }
+            DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
+        }
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        Task { @MainActor in Self.client?.registerPush(deviceToken) }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("notifications unavailable: \(error)")
+    }
+
+    // Open on screen already: the chat shows the answer, no banner needed.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [] }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        guard let s = response.notification.request.content.userInfo["conv"] as? String, let id = UUID(uuidString: s) else { return }
+        await MainActor.run { Self.client?.openRequest = id }
     }
 }
 

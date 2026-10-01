@@ -68,6 +68,12 @@ enum Prefs {
         set { d.set(newValue, forKey: "awayFromHome") }
     }
 
+    /// Buzz linked iPhones and iPads when an agent answers and cChat isn't open on them.
+    static var phoneNotify: Bool {
+        get { d.object(forKey: "phoneNotify") as? Bool ?? true }
+        set { d.set(newValue, forKey: "phoneNotify") }
+    }
+
     /// The welcome screen has been finished. A personal build never shows it.
     static var setupDone: Bool {
         get { Flavor.personal || d.bool(forKey: "setupDone") }

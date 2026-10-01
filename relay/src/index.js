@@ -16,6 +16,12 @@ const DEFAULT_WAIT = 60; // seconds; the sync long-poll is 25s on the computer
 const MAX_WAIT = 16 * 60; // `ask` with wait can take up to 15 minutes
 const BUCKET = 240; // burst (the phone fetches every contact's picture at start)
 const REFILL = 8; // requests per second, sustained
+const PUSH_BUCKET = 30; // notifications: a burst when a group of agents all answer at once
+const PUSH_REFILL = 1 / 10; // then one every 10 seconds
+// Only cChat's own phone apps can be notified through this relay.
+const TOPICS = new Set(["io.github.notlenny2.cchat.mobile"]);
+const DEVICE = /^[0-9a-f]{64,200}$/;
+const UUID = /^[0-9A-Fa-f-]{36}$/;
 
 export default {
   async fetch(request, env) {
@@ -23,7 +29,7 @@ export default {
     if (url.pathname === "/" || url.pathname === "/health") {
       return text(200, "cChat relay");
     }
-    const m = url.pathname.match(/^\/v1\/m\/([^/]+)\/(mac|rpc)$/);
+    const m = url.pathname.match(/^\/v1\/m\/([^/]+)\/(mac|rpc|push)$/);
     if (!m || !MAILBOX.test(m[1])) return text(404, "not found");
     const stub = env.MAILBOXES.get(env.MAILBOXES.idFromName(m[1]));
     return stub.fetch(request);
@@ -33,6 +39,9 @@ export default {
 export class Mailbox {
   constructor(ctx, env) {
     this.ctx = ctx;
+    this.env = env;
+    this.pushTokens = PUSH_BUCKET;
+    this.pushRefilled = Date.now();
     this.pending = new Map(); // id -> { resolve, status, parts, timer }
     this.tokens = BUCKET;
     this.refilled = Date.now();
@@ -44,6 +53,7 @@ export class Mailbox {
     const url = new URL(request.url);
     if (url.pathname.endsWith("/mac")) return this.attachMac(request);
     if (request.method !== "POST") return text(405, "POST only");
+    if (url.pathname.endsWith("/push")) return this.push(request);
     return this.forward(request, url);
   }
 
@@ -99,6 +109,39 @@ export class Mailbox {
       return text(503, "computer offline");
     }
     return answer;
+  }
+
+  // The computer asks for a notification on its phone ("Website: done, the page is up").
+  // Only the computer that owns this mailbox may ask. Nothing is stored; the text goes straight on to Apple.
+  async push(request) {
+    const auth = request.headers.get("Authorization") || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    const known = await this.ctx.storage.get("mac");
+    if (!known || !MAILBOX.test(token) || !timingSafeEqual(known, await sha256(token))) return text(401, "no");
+    if (!this.takePush()) return text(429, "slow down");
+    if (Number(request.headers.get("Content-Length") || "0") > 4096) return text(413, "too big");
+    let n;
+    const raw = await request.text();
+    if (raw.length > 4096) return text(413, "too big");
+    try { n = JSON.parse(raw); } catch { return text(400, "bad json"); }
+    if (!n || !DEVICE.test(n.device || "") || !TOPICS.has(n.topic)) return text(400, "bad device");
+    const title = String(n.title || "").slice(0, 80);
+    const body = String(n.body || "").slice(0, 240);
+    if (!body) return text(400, "empty");
+    const payload = { aps: { alert: { title, body }, sound: "default", "thread-id": UUID.test(n.conv || "") ? n.conv : "cchat" } };
+    if (UUID.test(n.conv || "")) payload.conv = n.conv;
+    if (Number.isInteger(n.badge) && n.badge >= 0 && n.badge < 10000) payload.aps.badge = n.badge;
+    const res = await apns(this.env, n.device, n.topic, payload);
+    return new Response(JSON.stringify(res), { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  }
+
+  takePush() {
+    const now = Date.now();
+    this.pushTokens = Math.min(PUSH_BUCKET, this.pushTokens + ((now - this.pushRefilled) / 1000) * PUSH_REFILL);
+    this.pushRefilled = now;
+    if (this.pushTokens < 1) return false;
+    this.pushTokens -= 1;
+    return true;
   }
 
   // Answers from the computer, in chunks: [4-byte header length][header JSON][bytes].
@@ -168,6 +211,47 @@ function* frames(id, body) {
     seq++;
     yield out;
   }
+}
+
+// Apple push. A phone app installed straight from Xcode only exists on Apple's sandbox, an App Store or
+// TestFlight one only on production, so try production and fall back to the sandbox on BadDeviceToken.
+async function apns(env, device, topic, payload) {
+  if (!env.APNS_KEY_P8 || !env.APNS_KEY_ID || !env.APNS_TEAM_ID) return { ok: false, reason: "not set up" };
+  const jwt = await apnsJWT(env);
+  let last;
+  for (const host of ["api.push.apple.com", "api.sandbox.push.apple.com"]) {
+    const r = await fetch(`https://${host}/3/device/${device}`, {
+      method: "POST",
+      headers: { authorization: `bearer ${jwt}`, "apns-topic": topic, "apns-push-type": "alert", "apns-priority": "10" },
+      body: JSON.stringify(payload),
+    });
+    if (r.status === 200) return { ok: true };
+    let reason = "";
+    try { reason = (await r.json()).reason || ""; } catch {}
+    last = { ok: false, status: r.status, reason };
+    if (reason !== "BadDeviceToken") break;
+  }
+  return last;
+}
+
+let cachedJWT = null; // { jwt, made }
+async function apnsJWT(env) {
+  // Apple wants the same token reused for 20-60 minutes, not a new one per push.
+  if (cachedJWT && Date.now() - cachedJWT.made < 40 * 60 * 1000) return cachedJWT.jwt;
+  const pem = env.APNS_KEY_P8.replace(/\\n/g, "\n").replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("pkcs8", der, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const enc = (o) => b64url(new TextEncoder().encode(JSON.stringify(o)));
+  const input = `${enc({ alg: "ES256", kid: env.APNS_KEY_ID })}.${enc({ iss: env.APNS_TEAM_ID, iat: Math.floor(Date.now() / 1000) })}`;
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(input));
+  cachedJWT = { jwt: `${input}.${b64url(new Uint8Array(sig))}`, made: Date.now() };
+  return cachedJWT.jwt;
+}
+
+function b64url(bytes) {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function text(status, s) {

@@ -136,7 +136,7 @@ struct RemoteSnapshot: Codable {
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject, ask, media, chatter, team, leave, file, read }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, newProject, ask, media, chatter, team, leave, file, read, notify, away }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString
@@ -158,6 +158,11 @@ struct RPCRequest: Codable {
     /// `send`: pictures from the phone's camera or photo library, as JPEG.
     var images: [Data]? = nil
     static let maxImages = 6
+    /// This phone's notification address (hex), sent with every request so the Mac knows it's looking at the app
+    /// and doesn't buzz it. `notify`: register it (text = device name; wait false = stop). `away`: app went to the background.
+    var device: String? = nil
+    /// `notify`: the phone app's bundle id, which Apple needs to deliver to the right app.
+    var topic: String? = nil
 }
 
 struct RPCResponse: Codable {

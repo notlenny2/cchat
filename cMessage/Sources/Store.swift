@@ -13,6 +13,9 @@ final class Store: ObservableObject {
     @Published var waitingFor: [UUID: String] = [:] { didSet { version += 1 } }
     /// conversationId -> what the agent answering right now has done so far this turn (View > Show the Work).
     @Published var work: [UUID: [WorkStep]] = [:]
+    /// An agent's answer landed (or it said it's waiting on the user): chat, notification title, text.
+    /// The phone link turns this into a notification.
+    var onAgentReply: ((UUID, String, String) -> Void)?
     /// Goes up on every change, so the iPhone/iPad app can ask "anything new since N?".
     private(set) var version = 0
 
@@ -896,6 +899,12 @@ final class Store: ObservableObject {
                     if selectedId != convId { conversations[j].unread = true }
                 }
                 if let needs { conversations[j].needsYou = needs.isEmpty ? "\(displayName(agent)) is waiting on you" : needs }
+                let said = pass ? nil : (body.isEmpty ? (media.isEmpty ? nil : "Sent you a picture.") : body)
+                if let text = said ?? conversations[j].needsYou.flatMap({ needs == nil ? nil : $0 }) {
+                    let who = displayName(agent)
+                    let group = conversations[j].isGroup
+                    onAgentReply?(convId, group ? title(for: conversations[j]) : who, group ? "\(who): \(text)" : text)
+                }
                 for open in opens {
                     if let made = openSubChat(asked: agent, name: open.name, role: open.role, message: open.message, like: conv),
                        let j2 = index(of: convId) {

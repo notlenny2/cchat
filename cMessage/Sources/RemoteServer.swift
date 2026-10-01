@@ -49,6 +49,13 @@ final class RemoteServer: ObservableObject {
         relayTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateRelay() }
         }
+        store.onAgentReply = { [weak self, weak store] conv, title, body in
+            guard let self, let store else { return }
+            let badge = store.conversations.filter { !$0.hidden && ($0.unread || $0.needsYou != nil) }.count
+            // Typing at the Mac with that very chat open: they're reading it there, no need to buzz the phone.
+            let sitting = NSApp.isActive && store.selectedId == conv && PushNotify.idleSeconds < 120
+            PushNotify.shared.agentReplied(chat: conv, title: title, body: body, badge: badge, pairingKey: self.key, sitting: sitting)
+        }
         if key == nil && Prefs.phoneLink { newPairing(); return }
         if key != nil || !clientKeys().isEmpty { start() }
         updateRelay()
@@ -70,6 +77,7 @@ final class RemoteServer: ObservableObject {
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.keyURL.path)
             key = k
             seenNonces = [:]
+            PushNotify.shared.removeAll()
             Prefs.phoneLink = true
             Log.info("remote: new pairing key")
             start()
@@ -81,6 +89,7 @@ final class RemoteServer: ObservableObject {
         try? FileManager.default.removeItem(at: Self.keyURL)
         key = nil
         Prefs.phoneLink = false
+        PushNotify.shared.removeAll()
         listener?.cancel(); listener = nil; running = false
         updateRelay()
         Log.info("remote: unpaired, server off")
@@ -225,6 +234,7 @@ final class RemoteServer: ObservableObject {
         if client == nil {
             lastClient = peer
             lastSeen = Date()
+            if req.op != .away { PushNotify.shared.seen(req.device) }
         }
 
         var res = RPCResponse(nonce: req.nonce, ok: true)
@@ -331,6 +341,14 @@ final class RemoteServer: ObservableObject {
             } else {
                 res.media = Self.scaled(url.path, maxSide: 1600)
             }
+        case .notify:
+            // Only the phone key: a paired agent has no phone to buzz.
+            guard client == nil, let d = req.device else { res.ok = false; break }
+            if req.wait == false { PushNotify.shared.remove(token: d) }
+            else if let t = req.topic { PushNotify.shared.register(token: d, topic: t, name: req.text ?? "iPhone") }
+            else { res.ok = false }
+        case .away:
+            if client == nil { PushNotify.shared.away(req.device) }
         case .icon:
             if let id = req.contact, let c = store.contact(id), let path = store.iconPath(for: c) {
                 res.png = Self.thumbnail(path)

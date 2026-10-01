@@ -41,6 +41,9 @@ struct MainView: View {
         }
         .sheet(isPresented: $showNew) { NewChatSheet { id in selected = id } }
         .onChange(of: selected) { _, id in if let id { client.markRead(id) } }
+        // A tapped notification opens its chat.
+        .onChange(of: client.openRequest) { _, id in if let id { selected = id; client.openRequest = nil } }
+        .onAppear { if let id = client.openRequest { selected = id; client.openRequest = nil } }
     }
 
     private var list: some View {

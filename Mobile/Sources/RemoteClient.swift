@@ -14,6 +14,11 @@ final class RemoteClient: ObservableObject {
     @Published private(set) var link: Link = .unpaired
     @Published private(set) var snapshot: RemoteSnapshot?
     @Published private(set) var icons: [UUID: UIImage] = [:]
+    /// A notification was tapped: the chat list opens this chat.
+    @Published var openRequest: UUID?
+    /// This phone's notification address from Apple (hex). Sent along with every request so the Mac knows
+    /// the app is open here and doesn't buzz it.
+    private var pushToken: String? = UserDefaults.standard.string(forKey: "pushToken")
 
     private var loop: Task<Void, Never>?
     private var hostIndex = 0
@@ -98,6 +103,30 @@ final class RemoteClient: ObservableObject {
     func stop() {
         loop?.cancel()
         loop = nil
+    }
+
+    // MARK: Notifications
+
+    /// Apple handed us this phone's notification address: tell the Mac so it can buzz us when an agent answers.
+    func registerPush(_ token: Data) {
+        let hex = token.map { String(format: "%02x", $0) }.joined()
+        pushToken = hex
+        UserDefaults.standard.set(hex, forKey: "pushToken")
+        var r = RPCRequest(op: .notify, text: UIDevice.current.name)
+        r.topic = Bundle.main.bundleIdentifier
+        Task { _ = try? await call(r) }
+    }
+
+    /// Going to the background: let the Mac know straight away so the next answer buzzes this phone.
+    func wentAway() {
+        guard pairing != nil, pushToken != nil else { return }
+        let app = UIApplication.shared
+        var bg = UIBackgroundTaskIdentifier.invalid
+        bg = app.beginBackgroundTask { app.endBackgroundTask(bg) }
+        Task {
+            _ = try? await call(RPCRequest(op: .away))
+            app.endBackgroundTask(bg)
+        }
     }
 
     /// Home address if one answers, otherwise the relay (when there is one), otherwise keep cycling home addresses.
@@ -230,6 +259,8 @@ final class RemoteClient: ObservableObject {
 
     private func call(_ req: RPCRequest) async throws -> RPCResponse {
         guard let p = pairing else { throw URLError(.userAuthenticationRequired) }
+        var req = req
+        req.device = pushToken
         let timeout: TimeInterval = req.op == .sync ? Remote.longPollSeconds + 15 : (req.op == .media || req.images != nil ? 180 : 15)
         let url: URL
         if viaRelay, let base = relayBase {

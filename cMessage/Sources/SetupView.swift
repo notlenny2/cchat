@@ -143,6 +143,7 @@ struct SetupView: View {
     @State private var grok: ToolState = .checking
     @State private var phoneLink = Prefs.phoneLink
     @State private var awayFromHome = Prefs.awayFromHome
+    @State private var phoneNotify = Prefs.phoneNotify
 
     private var welcome: Bool { onDone != nil }
 
@@ -251,10 +252,14 @@ struct SetupView: View {
                                     Prefs.awayFromHome = on
                                     RemoteServer.shared.updateRelay()
                                 }))
+                            Toggle("Buzz my phone when an agent answers", isOn: Binding(
+                                get: { phoneNotify },
+                                set: { on in phoneNotify = on; Prefs.phoneNotify = on }))
                         }
                     }
                     Text(Relay.baseURL != nil && awayFromHome
                          ? "Works at home and anywhere your phone has signal. Away from home it goes through the cChat relay, which only ever passes along messages locked with your code; it can't read them. Only a device that scanned your code can get in. Switching linking off unlinks every device."
+                         + (phoneNotify ? " Notifications show who answered and the start of what they said; that text passes through the relay to Apple on its way to your phone and isn't kept." : "")
                          : "Works on the same Wi-Fi. Only a device that scanned your code can get in. Switching this off unlinks every device.")
                         .font(.caption).foregroundStyle(Clay.inkSoft)
                 }
