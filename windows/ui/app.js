@@ -38,7 +38,8 @@ const isGroup = (c) => c.participantIds.length > 1;
 const displayName = (c) => {
   if (!c.parentId) return c.name;
   const p = contact(c.parentId);
-  return p ? `${p.name} ${c.name}` : c.name;
+  if (!p || c.name.toLowerCase().startsWith(p.name.toLowerCase())) return c.name;
+  return `${p.name} ${c.name}`;
 };
 const titleOf = (cv) => cv.title || cv.participantIds.map((id) => contact(id)).filter(Boolean).map(displayName).join(', ') || 'Chat';
 const projectOf = (cv) => { const c = contact(cv.participantIds[0]); return c ? (c.parentId ? contact(c.parentId) : c) : null; };
