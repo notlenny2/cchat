@@ -480,6 +480,20 @@ final class Store: ObservableObject {
         save()
     }
 
+    /// The user's "I've seen it, stop flagging it": clears the unread dot AND the Needs-you tag (which otherwise
+    /// waits for the user to text that chat). `unread: true` puts the dot back.
+    func setRead(_ ids: [UUID], unread: Bool = false) {
+        var changed = false
+        for id in ids {
+            guard let i = index(of: id) else { continue }
+            if unread { if !conversations[i].unread { conversations[i].unread = true; changed = true } }
+            else if conversations[i].unread || conversations[i].needsYou != nil {
+                conversations[i].unread = false; conversations[i].needsYou = nil; changed = true
+            }
+        }
+        if changed { save() }
+    }
+
     // MARK: Sending
 
     /// Finds a chat by what the user would call it: a chat's title ("Website", "Acme Tools") or a contact's

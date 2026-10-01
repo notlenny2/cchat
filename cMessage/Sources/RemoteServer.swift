@@ -256,6 +256,9 @@ final class RemoteServer: ObservableObject {
             if let c = req.conv { store.stop(c); store.save() } else { res.ok = false }
         case .markRead:
             if let c = req.conv { store.markRead(c) }
+        case .read:
+            // Mark as Read (clears Needs you too) or, with wait = false, Mark as Unread.
+            if let c = req.conv { store.setRead([c], unread: req.wait == false) } else { res.ok = false }
         case .hide:
             if let c = req.conv { store.hide(c) }
         case .file:

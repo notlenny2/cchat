@@ -152,6 +152,11 @@ struct ContentView: View {
             Divider()
         }
         Button("New Message…") { showNew = true }
+        let flagged = f.convs.filter { $0.unread || $0.needsYou != nil }
+        if !flagged.isEmpty {
+            Divider()
+            Button("Mark All as Read") { withAnimation { store.setRead(flagged.map(\.id)) } }
+        }
     }
 
     private func startFresh(_ c: Contact, in folder: String) {
@@ -160,6 +165,12 @@ struct ContentView: View {
     }
 
     @ViewBuilder private func chatMenu(_ c: Conversation) -> some View {
+        if c.unread || c.needsYou != nil {
+            Button("Mark as Read") { withAnimation { store.setRead([c.id]) } }
+        } else {
+            Button("Mark as Unread") { withAnimation { store.setRead([c.id], unread: true) } }
+        }
+        Divider()
         Button(c.isPinned ? "Unpin" : "Pin") { withAnimation { store.togglePin(c.id) } }
         Button("Rename…") { newName = store.title(for: c); renaming = c }
         Menu("Move to Folder") {

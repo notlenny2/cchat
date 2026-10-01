@@ -120,6 +120,8 @@ final class RemoteClient: ObservableObject {
     }
     func rename(_ conv: UUID, to name: String) { fire(RPCRequest(op: .rename, conv: conv, text: name)) }
     func togglePin(_ conv: UUID) { fire(RPCRequest(op: .pin, conv: conv)) }
+    /// Mark as Read (also clears Needs you) or Mark as Unread.
+    func setRead(_ conv: UUID, read: Bool) { fire(RPCRequest(op: .read, conv: conv, wait: read)) }
     func stopReply(_ conv: UUID) { fire(RPCRequest(op: .stop, conv: conv)) }
     func markRead(_ conv: UUID) { fire(RPCRequest(op: .markRead, conv: conv)) }
     func hide(_ conv: UUID) { fire(RPCRequest(op: .hide, conv: conv)) }

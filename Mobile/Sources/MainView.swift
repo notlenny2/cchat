@@ -68,6 +68,12 @@ struct MainView: View {
                     GroupAvatar(ids: f.project.map { [$0] } ?? [], size: FolderHeadingSize.avatar)
                 }
                 .contextMenu {
+                    let flagged = f.convs.filter { $0.unread || $0.needsYou != nil }
+                    if !flagged.isEmpty {
+                        Button { flagged.forEach { client.setRead($0.id, read: true) } } label: {
+                            Label("Mark All as Read", systemImage: "checkmark.circle")
+                        }
+                    }
                     if let p = f.project {
                         Button { startFresh(p, in: f.id) } label: { Label("New Chat", systemImage: "square.and.pencil") }
                         let subs = (client.snapshot?.contacts ?? []).filter { $0.parentId == p }
@@ -116,6 +122,10 @@ struct MainView: View {
         NavigationLink(value: c.id) { Row(conv: c) }
             .contextMenu { menu(c) }
             .swipeActions(edge: .leading) {
+                let flagged = c.unread || c.needsYou != nil
+                Button { client.setRead(c.id, read: flagged) } label: {
+                    Label(flagged ? "Read" : "Unread", systemImage: flagged ? "checkmark.circle" : "circle.fill")
+                }.tint(Palette.blue)
                 Button { client.togglePin(c.id) } label: { Label("Pin", systemImage: "pin") }.tint(.orange)
             }
             .swipeActions(edge: .trailing) {
@@ -133,6 +143,10 @@ struct MainView: View {
     }
 
     @ViewBuilder private func menu(_ c: Conversation) -> some View {
+        let flagged = c.unread || c.needsYou != nil
+        Button { client.setRead(c.id, read: flagged) } label: {
+            Label(flagged ? "Mark as Read" : "Mark as Unread", systemImage: flagged ? "checkmark.circle" : "circle.fill")
+        }
         Button { client.togglePin(c.id) } label: { Label(c.isPinned ? "Unpin" : "Pin", systemImage: c.isPinned ? "pin.slash" : "pin") }
         Button { newName = client.title(c); renaming = c } label: { Label("Rename", systemImage: "pencil") }
         Menu {
