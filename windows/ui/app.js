@@ -303,7 +303,25 @@ async function turn(cv, agent, alone) {
   for (const o of opens) openSubChat(agent, o, cv);
   save();
   render();
+  if (engine === 'claude' && out.session) await condense(cv, agent, out);
   return 'said';
+}
+
+/// Every step an agent takes re-reads its whole memory, so once it's big, condense it (Claude Code's /compact).
+/// The native side measures it and does nothing when it's still small.
+async function condense(cv, agent, out) {
+  const turnId = uid();
+  busy[cv.id] = { turn: turnId, agentId: null, waiting: null, step: '' };
+  try {
+    const done = await invoke('condense', { req: { turn: turnId, cwd: agent.projectPath, who: displayName(agent),
+      session: out.session, model: cv.model || agent.model || '', window: out.window || null } });
+    if (done) {
+      if (done.session && done.session !== out.session) cv.sessions[agent.id] = done.session;
+      note(cv, `Tidied up ${displayName(agent)}'s memory so it stays quick. It still knows what you've been working on.`);
+    }
+  } catch (e) { console.warn('condense', e); }
+  delete busy[cv.id];
+  render();
 }
 
 function friendlyError(err, engine) {
@@ -844,6 +862,7 @@ T.event.listen('turn', ({ payload }) => {
     if (payload.state === 'waiting') b.waiting = payload.detail || 'another agent';
     if (payload.state === 'running') b.waiting = null;
     if (payload.state === 'step') b.step = stepLabel(payload.detail);
+    if (payload.state === 'condensing') b.step = 'Tidying up memory';
     if (cid === selected) renderTranscript(conv(cid));
     renderList();
   }

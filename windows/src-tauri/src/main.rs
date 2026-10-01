@@ -185,6 +185,8 @@ struct TurnOut {
     session: Option<String>,
     error: Option<String>,
     denied: Vec<String>,
+    /// The model's context window (Claude), so the UI can ask for condensing at the right size.
+    window: Option<u64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -212,36 +214,41 @@ fn turn_blocking(app: &AppHandle, shared: &Shared, req: TurnReq) -> TurnOut {
     if !Path::new(&req.cwd).is_dir() {
         return TurnOut { error: Some(format!("The project folder is missing: {}", req.cwd)), ..Default::default() };
     }
-    // Take the folder. While someone else has it, say who and wait (Stop gives up the place in line).
-    let key = folder_key(&req.cwd);
+    with_folder(app, shared, &req.turn, &req.cwd, &req.who, || match req.engine.as_str() {
+        "codex" => run_codex(app, shared, &req),
+        _ => run_claude(app, shared, &req),
+    }).unwrap_or_else(|| TurnOut { error: Some("stopped".into()), ..Default::default() })
+}
+
+/// Takes the project folder, runs `f`, gives it back. While someone else has it, says who and waits.
+/// None if Stop was pressed while waiting (that gives up the place in line).
+fn with_folder<T>(app: &AppHandle, shared: &Shared, turn: &str, cwd: &str, who: &str, f: impl FnOnce() -> T) -> Option<T> {
+    let key = folder_key(cwd);
     let slot = {
-        let mut f = shared.folders.lock().unwrap();
-        f.entry(key.clone()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
+        let mut folders = shared.folders.lock().unwrap();
+        folders.entry(key.clone()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
     };
     let mut told = false;
     let guard = loop {
         if let Ok(g) = slot.try_lock() { break g; }
-        if is_stopped(shared, &req.turn) {
-            shared.stopped.lock().unwrap().remove(&req.turn);
-            return TurnOut { error: Some("stopped".into()), ..Default::default() };
+        if is_stopped(shared, turn) {
+            shared.stopped.lock().unwrap().remove(turn);
+            return None;
         }
         if !told {
             let holder = shared.holders.lock().unwrap().get(&key).cloned().unwrap_or_default();
-            emit(app, &req.turn, "waiting", &holder);
+            emit(app, turn, "waiting", &holder);
             told = true;
         }
         std::thread::sleep(Duration::from_millis(400));
     };
-    shared.holders.lock().unwrap().insert(key.clone(), req.who.clone());
-    emit(app, &req.turn, "running", "");
-    let out = match req.engine.as_str() {
-        "codex" => run_codex(app, shared, &req),
-        _ => run_claude(app, shared, &req),
-    };
+    shared.holders.lock().unwrap().insert(key.clone(), who.to_string());
+    emit(app, turn, "running", "");
+    let out = f();
     shared.holders.lock().unwrap().remove(&key);
     drop(guard);
-    shared.stopped.lock().unwrap().remove(&req.turn);
-    out
+    shared.stopped.lock().unwrap().remove(turn);
+    Some(out)
 }
 
 /// Starts the process, feeds the prompt on stdin (never on the command line), and hands each stdout line to
@@ -308,6 +315,9 @@ fn run_claude(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
                     let why = if out.text.is_empty() { v["subtype"].as_str().unwrap_or("error").to_string() } else { std::mem::take(&mut out.text) };
                     out.error = Some(why);
                 }
+                if let Some(m) = v["modelUsage"].as_object() {
+                    out.window = m.values().filter_map(|u| u["contextWindow"].as_u64()).max();
+                }
                 if let Some(d) = v["permission_denials"].as_array() {
                     out.denied = d.iter().filter_map(|x| x["tool_name"].as_str().map(String::from)).collect();
                 }
@@ -325,6 +335,107 @@ fn run_claude(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
         }
     }
     out
+}
+
+// MARK: memory condensing
+// Every step an agent takes re-reads its whole memory (its Claude Code session), so a big one burns usage fast.
+// After a turn, if the session has grown past a sensible size, Claude Code's own /compact condenses it in place:
+// same session, the parts that matter kept, a fraction of the size. Per agent per chat, like the Mac.
+
+const CONDENSE: &str = "/compact Keep what the user asked for and why, decisions made, where the work stands, open to-dos and \
+promises, names of files and features involved, and anything the user said to remember. Drop tool \
+output, file dumps, logs and step-by-step detail that's already done.";
+
+/// 250k on the 1M-token models, 60% of the window on smaller ones. CCHAT_CONDENSE_AT overrides it for tests.
+fn condense_limit(window: Option<u64>) -> u64 {
+    if let Some(t) = std::env::var("CCHAT_CONDENSE_AT").ok().and_then(|s| s.parse().ok()) { return t; }
+    (window.unwrap_or(200_000) * 6 / 10).min(250_000)
+}
+
+/// How much the session holds now: the prompt size of its latest model call, from the tail of Claude Code's
+/// own record of it (%USERPROFILE%\.claude\projects\*\<session>.jsonl).
+fn session_size(session: &str) -> Option<u64> {
+    if session.is_empty() || !session.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') { return None; }
+    let name = format!("{session}.jsonl");
+    let file = fs::read_dir(home().join(".claude").join("projects")).ok()?
+        .flatten().map(|d| d.path().join(&name)).find(|p| p.is_file())?;
+    let mut f = fs::File::open(file).ok()?;
+    let len = f.metadata().ok()?.len();
+    use std::io::{Seek, SeekFrom};
+    f.seek(SeekFrom::Start(len.saturating_sub(1_000_000))).ok()?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf);
+    for line in text.lines().rev() {
+        if !line.contains("\"usage\"") { continue; }
+        let Ok(o) = serde_json::from_str::<Value>(line) else { continue };
+        if o["isSidechain"].as_bool() == Some(true) || o["message"]["model"] == "<synthetic>" { continue; }
+        let u = &o["message"]["usage"];
+        let n: u64 = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+            .iter().map(|k| u[*k].as_u64().unwrap_or(0)).sum();
+        if n > 0 { return Some(n); }
+    }
+    None
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CondenseReq {
+    turn: String,
+    cwd: String,
+    who: String,
+    session: String,
+    model: String,
+    window: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct Condensed {
+    was: u64,
+    /// The session id afterwards, in case Claude Code gave it a new one.
+    session: Option<String>,
+}
+
+/// After a Claude reply lands, condense that agent's memory in that chat if it has grown big. Takes the project
+/// folder like a turn, so nothing else runs in it meanwhile. Returns the size it was (thousands of tokens) when
+/// it condensed, None when there was nothing to do (or it couldn't).
+#[tauri::command]
+async fn condense(app: AppHandle, shared: State<'_, Arc<Shared>>, req: CondenseReq) -> Result<Option<Condensed>, String> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let size = session_size(&req.session)?;
+        let limit = condense_limit(req.window);
+        if size < limit || !Path::new(&req.cwd).is_dir() { return None; }
+        with_folder(&app, &shared, &req.turn, &req.cwd, &req.who, || {
+            // Measure again: it may have grown or been condensed while we waited.
+            let size = session_size(&req.session).unwrap_or(size);
+            if size < limit { return None; }
+            log(&format!("condensing {} ({}k, limit {}k)", req.who, size / 1000, limit / 1000));
+            emit(&app, &req.turn, "condensing", "");
+            let tool = wait_for_tool("claude")?;
+            let mut cmd = tool.command();
+            cmd.current_dir(&req.cwd);
+            cmd.args(["-p", "--output-format", "stream-json", "--verbose", "--resume", &req.session,
+                      "--model", if req.model.is_empty() { "opus" } else { &req.model }]);
+            let mut ok = false;
+            let mut session = None;
+            let res = drive(&shared, &req.turn, cmd, CONDENSE, |line| {
+                if let Ok(v) = serde_json::from_str::<Value>(line) {
+                    if v["type"] == "result" {
+                        ok = v["is_error"].as_bool() != Some(true);
+                        session = v["session_id"].as_str().map(String::from);
+                    }
+                }
+            });
+            if ok && res.is_ok() && !is_stopped(&shared, &req.turn) {
+                log(&format!("condensed {} (was {}k)", req.who, size / 1000));
+                Some(Condensed { was: size / 1000, session })
+            } else {
+                log(&format!("condense failed for {}: {:?}", req.who, res));
+                None
+            }
+        }).flatten()
+    }).await.map_err(|e| e.to_string())
 }
 
 fn run_codex(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
@@ -571,7 +682,7 @@ fn main() {
         .manage(Arc::new(Shared::default()))
         .invoke_handler(tauri::generate_handler![
             run_turn, stop_turn, quick, engines, open_setup, load_store, save_store,
-            list_projects, create_project, import_picture, import_media, open_media
+            list_projects, create_project, import_picture, import_media, open_media, condense
         ])
         .run(tauri::generate_context!())
         .expect("cChat couldn't start");
