@@ -29,6 +29,9 @@ const busy = {};        // convId -> { turn, agentId, waiting, step }
 const queues = {};      // convId -> [agentId] still owed an answer
 const pumping = {};     // convId -> true while its loop runs
 const pendingPics = {}; // convId -> [path]
+const work = {};        // convId -> steps of the turn running now (Show the Work)
+const openWork = new Set(); // message ids whose saved work log is unfolded
+let showWork = localStorage.getItem('showWork') === '1';
 const folded = new Set(JSON.parse(localStorage.getItem('folded') || '[]'));
 let saveTimer = null;
 
@@ -260,6 +263,7 @@ async function turn(cv, agent, alone) {
   const system = houseRules(agent, cv);
   const turnId = uid();
   busy[cv.id] = { turn: turnId, agentId: agent.id, waiting: null, step: '' };
+  work[cv.id] = [];
   render();
   let out;
   try {
@@ -275,10 +279,11 @@ async function turn(cv, agent, alone) {
     out = { text: '', error: String(e), denied: [] };
   }
   delete busy[cv.id];
+  const steps = finishedWork(cv.id, out.text || '');
   if (out.session) { cv.sessions = cv.sessions || {}; cv.sessions[agent.id] = out.session; }
   if (out.error === 'stopped') { note(cv, `Stopped ${displayName(agent)}.`); return 'stopped'; }
   if (out.error && !out.text) {
-    post(cv, { senderId: agent.id, kind: 'error', text: friendlyError(out.error, engine) });
+    post(cv, { senderId: agent.id, kind: 'error', text: friendlyError(out.error, engine), work: steps });
     return 'error';
   }
   let text = out.text || '';
@@ -293,7 +298,7 @@ async function turn(cv, agent, alone) {
     try { media.push(await invoke('import_media', { reference: ref, cwd: agent.projectPath })); }
     catch (e) { console.warn('show', ref, e); }
   }
-  if (text || media.length) post(cv, { senderId: agent.id, text, attachments: media.length ? media : undefined });
+  if (text || media.length) post(cv, { senderId: agent.id, text, attachments: media.length ? media : undefined, work: steps });
   cv.suggestions = next;
   if (need != null) cv.needsYou = need || 'Waiting on you';
   if (out.denied?.length) {
@@ -305,6 +310,17 @@ async function turn(cv, agent, alone) {
   render();
   if (engine === 'claude' && out.session) await condense(cv, agent, out);
   return 'said';
+}
+
+/// This turn's steps, to keep with the reply. The reply itself streams out as the last remark, so that's dropped
+/// (the end-of-turn tally lands after it, so look back past info lines).
+function finishedWork(convId, reply) {
+  const steps = work[convId] || [];
+  delete work[convId];
+  let at = steps.length - 1;
+  while (at >= 0 && steps[at].kind === 'info') at--;
+  if (at >= 0 && steps[at].kind === 'note' && reply.trim().endsWith(steps[at].text.slice(-200))) steps.splice(at, 1);
+  return steps.length ? steps : undefined;
 }
 
 /// Every step an agent takes re-reads its whole memory, so once it's big, condense it (Claude Code's /compact).
@@ -594,6 +610,10 @@ function renderHeader(cv) {
   sel.title = 'Model';
   sel.onchange = () => { cv.model = sel.value || null; note(cv, `Now using ${sel.selectedOptions[0].textContent}.`); };
   h.appendChild(sel);
+  const w = el('button', `pill-btn work-btn${showWork ? ' on' : ''}`, '>_');
+  w.title = showWork ? 'Hide the work (Ctrl+Shift+E)' : 'Show the work agents do: commands, files, output (Ctrl+Shift+E)';
+  w.onclick = toggleWork;
+  h.appendChild(w);
   if (busy[cv.id] || queues[cv.id]?.length) {
     const s = el('button', 'pill-btn stop', 'Stop');
     s.onclick = () => stop(cv.id);
@@ -641,6 +661,7 @@ function renderTranscript(cv) {
     if (mine) pics.forEach((p) => box.appendChild(p));
     if (m.text) { const b = el('div', 'bubble clay'); richText(b, m.text); box.appendChild(b); }
     if (!mine) pics.forEach((p) => box.appendChild(p));
+    if (showWork && !mine && m.work?.length) box.appendChild(workFold(m));
     t.appendChild(box);
   }
   const b = busy[cv.id];
@@ -653,8 +674,54 @@ function renderTranscript(cv) {
     const detail = b.waiting ? `Waiting for ${b.waiting} to finish in this project` : [isGroup(cv) ? who : '', b.step].filter(Boolean).join(' · ');
     if (detail) ty.appendChild(el('span', 'detail', detail));
     t.appendChild(ty);
+    if (showWork && work[cv.id]?.length) t.appendChild(workLog(work[cv.id], true));
   }
   if (atBottom) t.scrollTop = t.scrollHeight;
+}
+
+// MARK: Show the Work: what an agent actually did for a reply (files it read, commands it ran and what they
+// printed, its thinking), laid out like a terminal. Off by default; the chat stays plain English until asked.
+
+function toggleWork() {
+  showWork = !showWork;
+  localStorage.setItem('showWork', showWork ? '1' : '0');
+  render();
+}
+
+function workLog(steps, live) {
+  const box = el('div', `worklog${live ? ' live' : ''}`);
+  for (const s of steps) {
+    const row = el('div', `ws k-${s.kind}${s.failed ? ' failed' : ''}${s.sub ? ' sub' : ''}`);
+    if (s.kind === 'tool') {
+      const [first, ...rest] = s.text.split('\n');
+      const head = el('div', 'head');
+      head.appendChild(el('span', 'tname', s.title));
+      head.appendChild(el('span', null, (/^(Bash|Shell|PowerShell)$/.test(s.title) ? '$ ' : '') + first));
+      row.appendChild(head);
+      if (rest.length) {
+        const d = el('div', 'detail');
+        for (const l of rest.slice(0, live ? 14 : 400)) {
+          d.appendChild(el('div', /^-( |$)/.test(l) ? 'del' : /^\+( |$)/.test(l) ? 'add' : l.startsWith('#') ? 'cmt' : null, l || ' '));
+        }
+        row.appendChild(d);
+      }
+    } else row.textContent = s.text;
+    box.appendChild(row);
+  }
+  if (live) requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  return box;
+}
+
+/// Under an agent's reply: "The work: 12 steps", folded until clicked.
+function workFold(m) {
+  const wrap = el('div', 'workfold');
+  const tools = m.work.filter((s) => s.kind === 'tool').length;
+  const open = openWork.has(m.id);
+  const b = el('button', null, `${open ? '▾' : '▸'} ${tools ? `The work: ${tools} step${tools === 1 ? '' : 's'}` : 'How it got here'}`);
+  b.onclick = () => { open ? openWork.delete(m.id) : openWork.add(m.id); renderTranscript(conv(selected)); };
+  wrap.appendChild(b);
+  if (open) wrap.appendChild(workLog(m.work, false));
+  return wrap;
 }
 
 function renderChips(cv) {
@@ -854,7 +921,10 @@ $('#composer').onsubmit = (e) => {
 };
 $('#input').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#composer').requestSubmit(); } };
 $('#input').oninput = (e) => { e.target.style.height = ''; e.target.style.height = Math.min(180, e.target.scrollHeight) + 'px'; };
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.setupDone) closeSheet(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && S.setupDone) closeSheet();
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); toggleWork(); }
+});
 
 T.event.listen('turn', ({ payload }) => {
   for (const [cid, b] of Object.entries(busy)) {
@@ -865,6 +935,13 @@ T.event.listen('turn', ({ payload }) => {
     if (payload.state === 'condensing') b.step = 'Tidying up memory';
     if (cid === selected) renderTranscript(conv(cid));
     renderList();
+  }
+});
+T.event.listen('work', ({ payload }) => {
+  for (const [cid, b] of Object.entries(busy)) {
+    if (b.turn !== payload.turn || !work[cid]) continue;
+    work[cid].push(...payload.steps.slice(0, Math.max(0, 300 - work[cid].length)));
+    if (showWork && cid === selected) renderTranscript(conv(cid));
   }
 });
 const stepLabel = (tool) => ({ Read: 'Reading', Edit: 'Editing', Write: 'Writing', Bash: 'Running something', Grep: 'Searching', Glob: 'Looking around',

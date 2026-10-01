@@ -157,3 +157,26 @@ input, textarea, select { font: inherit; color: var(--ink); }
 .u-fill.orange, .u-dot.orange { background: #e8932f; }
 .u-fill.red, .u-dot.red { background: #d9453b; }
 .u-reset { font-size: 10.5px; color: var(--ink-soft); opacity: .85; margin-top: 2px; }
+
+/* Show the Work: a dark terminal box, live under the typing dots and folded under each reply */
+.work-btn { font-family: Consolas, monospace; font-weight: 700; color: var(--ink-soft); }
+.work-btn.on { background: var(--accent); color: #fff; }
+.worklog { background: #1c1c1c; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 10px; margin: 6px 0;
+  max-height: 520px; overflow-y: auto; color: rgba(255,255,255,.85); user-select: text; align-self: stretch;
+  font-family: Consolas, "Cascadia Mono", monospace; font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.worklog.live { max-height: 280px; align-self: flex-start; width: min(720px, 90%); }
+.workfold { align-self: stretch; width: min(720px, 100%); }
+.msg.them:has(.workfold) { max-width: min(760px, 90%); }
+.workfold > button { border: 0; background: transparent; color: var(--ink-soft); font-size: 11.5px; font-weight: 600; padding: 3px 6px; }
+.ws { margin-bottom: 5px; }
+.ws.k-tool { margin-top: 3px; }
+.ws .tname { color: #f59e6b; font-weight: 700; margin-right: 6px; }
+.ws .detail { padding-left: 12px; color: rgba(255,255,255,.7); }
+.ws .detail .add { color: #8cd98c; } .ws .detail .del { color: #ff8073; } .ws .detail .cmt { color: rgba(255,255,255,.4); }
+.ws.k-output { padding-left: 12px; color: rgba(255,255,255,.55); }
+.ws.k-note { font-family: "Segoe UI", system-ui, sans-serif; font-size: 12.5px; color: rgba(255,255,255,.85); margin-top: 3px; }
+.ws.k-thinking { font-family: "Segoe UI", system-ui, sans-serif; font-style: italic; color: rgba(255,255,255,.45); }
+.ws.k-info { font-size: 10.5px; color: rgba(255,255,255,.38); }
+.ws.failed { color: #ff8073; }
+.ws.sub { margin-left: 4px; padding-left: 12px; border-left: 1.5px solid rgba(255,255,255,.15); }
+.worklog.live .ws.k-output, .worklog.live .ws.k-thinking { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 10; overflow: hidden; }

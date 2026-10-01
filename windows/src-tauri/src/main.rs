@@ -297,6 +297,7 @@ fn run_claude(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
     let turn = req.turn.clone();
     let res = drive(shared, &req.turn, cmd, &req.prompt, |line| {
         let Ok(v) = serde_json::from_str::<Value>(line) else { return };
+        emit_work(app, &turn, claude_steps(&v));
         match v["type"].as_str() {
             Some("system") => if let Some(s) = v["session_id"].as_str() { out.session = Some(s.into()) },
             Some("rate_limit_event") => if let Some(u) = claude_usage(&v) { let _ = app.emit("usage", u); },
@@ -336,6 +337,235 @@ fn run_claude(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
         }
     }
     out
+}
+
+// MARK: Show the Work
+// What an agent did during a turn, terminal style, the way Claude Code's verbose mode shows it: the tools it
+// ran with their full inputs, what came back, its thinking and remarks, and bookkeeping lines (session start,
+// hooks, the end-of-turn tally). Same steps as the Mac's WorkStep. The UI shows them live and keeps them on the reply.
+
+#[derive(Serialize, Clone)]
+struct WorkStep {
+    /// tool, output, note, thinking or info
+    kind: &'static str,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    title: String,
+    text: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    failed: bool,
+    /// Ties an output to the call it came from (Claude can run several at once).
+    #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+    reference: Option<String>,
+    /// Done by a helper agent the main one sent off.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    sub: bool,
+}
+
+fn step(kind: &'static str, title: &str, text: String) -> WorkStep {
+    WorkStep { kind, title: title.into(), text, failed: false, reference: None, sub: false }
+}
+
+#[derive(Serialize, Clone)]
+struct WorkEvent {
+    turn: String,
+    steps: Vec<WorkStep>,
+}
+
+fn emit_work(app: &AppHandle, turn: &str, steps: Vec<WorkStep>) {
+    if !steps.is_empty() { let _ = app.emit("work", WorkEvent { turn: turn.into(), steps }); }
+}
+
+/// Keeps the store from ballooning: a long output only needs its start and end.
+fn clip(s: &str, max: usize) -> String {
+    let t = s.trim();
+    let n = t.chars().count();
+    if n <= max { return t.to_string(); }
+    let head: String = t.chars().take(max * 2 / 3).collect();
+    let tail: String = t.chars().skip(n - max / 3).collect();
+    format!("{head}\n…\n{tail}")
+}
+
+fn tokens(n: u64) -> String {
+    if n >= 1_000_000 { format!("{:.1}M", n as f64 / 1e6) } else if n >= 1000 { format!("{:.1}k", n as f64 / 1e3) } else { n.to_string() }
+}
+
+fn claude_steps(o: &Value) -> Vec<WorkStep> {
+    match (o["type"].as_str(), o["subtype"].as_str()) {
+        (Some("system"), Some("init")) => {
+            let bits: Vec<String> = [
+                o["claude_code_version"].as_str().map(|v| format!("Claude Code {v}")),
+                o["model"].as_str().map(String::from),
+                o["permissionMode"].as_str().map(String::from),
+                o["session_id"].as_str().map(|s| format!("session {}", s.chars().take(8).collect::<String>())),
+                o["mcp_servers"].as_array().map(|a| format!("{} MCP servers", a.len())),
+            ].into_iter().flatten().collect();
+            return vec![step("info", "", bits.join(" · "))];
+        }
+        (Some("system"), Some("hook_response")) => {
+            let said = o["output"].as_str().unwrap_or("").trim();
+            let head = format!("{} hook {}", o["hook_name"].as_str().unwrap_or("hook"), o["outcome"].as_str().unwrap_or("ran"));
+            let mut s = step("info", "", clip(&if said.is_empty() { head } else { format!("{head}: {said}") }, 1200));
+            s.failed = o["exit_code"].as_i64().unwrap_or(0) != 0;
+            return vec![s];
+        }
+        (Some("system"), Some("compact_boundary")) => return vec![step("info", "", "Conversation compacted".into())],
+        (Some("result"), _) => {
+            let mut s = step("info", "", tally(o));
+            s.failed = o["is_error"].as_bool() == Some(true);
+            return vec![s];
+        }
+        _ => {}
+    }
+    let Some(blocks) = o["message"]["content"].as_array() else { return vec![] };
+    let sub = o["parent_tool_use_id"].is_string();
+    let mut out = vec![];
+    for b in blocks {
+        let mut s = match (o["type"].as_str(), b["type"].as_str()) {
+            (Some("assistant"), Some("tool_use")) => {
+                let name = b["name"].as_str().unwrap_or("Tool");
+                let mut s = step("tool", name, clip(&describe(name, &b["input"]), 4000));
+                s.reference = b["id"].as_str().map(String::from);
+                s
+            }
+            (Some("assistant"), Some("text")) => match b["text"].as_str() {
+                Some(t) if !t.trim().is_empty() => step("note", "", clip(t, 5000)),
+                _ => continue,
+            },
+            (Some("assistant"), Some("thinking")) => match b["thinking"].as_str() {
+                Some(t) if !t.is_empty() => step("thinking", "", clip(t, 5000)),
+                _ => continue,
+            },
+            (Some("assistant"), Some("redacted_thinking")) => step("thinking", "", "(thinking hidden)".into()),
+            (Some("user"), Some("tool_result")) => {
+                let text = match &b["content"] {
+                    Value::String(s) => s.clone(),
+                    Value::Array(parts) => parts.iter().map(|p| if p["type"] == "text" { p["text"].as_str().unwrap_or("").to_string() } else { "[picture]".into() })
+                        .collect::<Vec<_>>().join("\n"),
+                    _ => String::new(),
+                };
+                let mut s = step("output", "", clip(if text.is_empty() { "(no output)" } else { &text }, 5000));
+                s.failed = b["is_error"].as_bool() == Some(true);
+                s.reference = b["tool_use_id"].as_str().map(String::from);
+                s
+            }
+            _ => continue,
+        };
+        s.sub = sub;
+        out.push(s);
+    }
+    out
+}
+
+/// The end-of-turn line: how long, how many round trips, tokens in and out, what it cost.
+fn tally(o: &Value) -> String {
+    let mut bits = vec![];
+    if let Some(ms) = o["duration_ms"].as_f64() { bits.push(format!("Done in {:.1}s", ms / 1000.0)); }
+    if let Some(n) = o["num_turns"].as_u64() { bits.push(format!("{n} turn{}", if n == 1 { "" } else { "s" })); }
+    let u = &o["usage"];
+    if u.is_object() {
+        let n = |k: &str| u[k].as_u64().unwrap_or(0);
+        let cached = n("cache_read_input_tokens");
+        let input = n("input_tokens") + n("cache_creation_input_tokens") + cached;
+        bits.push(format!("{} in{}", tokens(input), if cached > 0 { format!(" ({} cached)", tokens(cached)) } else { String::new() }));
+        bits.push(format!("{} out", tokens(n("output_tokens"))));
+    }
+    if let Some(c) = o["total_cost_usd"].as_f64() { bits.push(format!("${c:.3}")); }
+    if let Some(r) = o["terminal_reason"].as_str() { if r != "completed" { bits.push(r.into()); } }
+    if bits.is_empty() { "Done".into() } else { bits.join(" · ") }
+}
+
+/// What a tool call was, in full: the command (with its description), an edit as before/after lines, the file
+/// written, every search option.
+fn describe(tool: &str, input: &Value) -> String {
+    let s = |k: &str| input[k].as_str().filter(|v| !v.is_empty()).map(String::from);
+    let lines = |t: &str, mark: &str| t.split('\n').map(|l| format!("{mark} {l}")).collect::<Vec<_>>().join("\n");
+    let diff = |old: &str, new: &str| format!("{}\n{}", lines(old, "-"), lines(new, "+"));
+    match tool {
+        "Bash" | "PowerShell" => {
+            let mut t = s("command").unwrap_or_default();
+            if let Some(d) = s("description") { t += &format!("\n# {d}"); }
+            if input["run_in_background"].as_bool() == Some(true) { t += "\n# in the background"; }
+            t
+        }
+        "Read" => {
+            let mut t = s("file_path").unwrap_or_default();
+            if let Some(o) = input["offset"].as_u64() { t += &format!(" from line {o}"); }
+            if let Some(l) = input["limit"].as_u64() { t += &format!(", {l} lines"); }
+            if let Some(p) = s("pages") { t += &format!(" pages {p}"); }
+            t
+        }
+        "Edit" => [s("file_path"), (input["replace_all"].as_bool() == Some(true)).then(|| "(every match)".to_string()),
+                   Some(diff(&s("old_string").unwrap_or_default(), &s("new_string").unwrap_or_default()))]
+            .into_iter().flatten().collect::<Vec<_>>().join("\n"),
+        "MultiEdit" => std::iter::once(s("file_path").unwrap_or_default())
+            .chain(input["edits"].as_array().into_iter().flatten()
+                .map(|e| diff(e["old_string"].as_str().unwrap_or(""), e["new_string"].as_str().unwrap_or(""))))
+            .collect::<Vec<_>>().join("\n"),
+        "Write" => format!("{}\n{}", s("file_path").unwrap_or_default(), lines(&s("content").unwrap_or_default(), "+")),
+        "Grep" => {
+            let mut t = [s("pattern"), s("path").map(|p| format!("in {p}"))].into_iter().flatten().collect::<Vec<_>>().join(" ");
+            let mut opts: Vec<String> = ["glob", "type", "output_mode"].iter().filter_map(|k| s(k).map(|v| format!("{k}={v}"))).collect();
+            opts.extend(["-i", "-n", "multiline"].iter().filter(|k| input[**k].as_bool() == Some(true)).map(|k| k.to_string()));
+            opts.extend(["-A", "-B", "-C", "head_limit"].iter().filter_map(|k| input[*k].as_u64().map(|v| format!("{k}={v}"))));
+            if !opts.is_empty() { t += &format!("  ({})", opts.join(" ")); }
+            t
+        }
+        "Glob" => [s("pattern"), s("path").map(|p| format!("in {p}"))].into_iter().flatten().collect::<Vec<_>>().join(" "),
+        "WebFetch" => [s("url"), s("prompt")].into_iter().flatten().collect::<Vec<_>>().join("\n"),
+        "WebSearch" => s("query").unwrap_or_default(),
+        "Task" | "Agent" => [s("description"), s("subagent_type").map(|t| format!("({t})")), s("prompt")].into_iter().flatten().collect::<Vec<_>>().join("\n"),
+        "TodoWrite" => input["todos"].as_array().into_iter().flatten().filter_map(|t| {
+            let box_ = match t["status"].as_str() { Some("completed") => "[x]", Some("in_progress") => "[~]", _ => "[ ]" };
+            t["content"].as_str().map(|c| format!("{box_} {c}"))
+        }).collect::<Vec<_>>().join("\n"),
+        _ => serde_json::to_string_pretty(input).unwrap_or_default(),
+    }
+}
+
+/// Same for Codex's `--json` events.
+fn codex_steps(o: &Value) -> Vec<WorkStep> {
+    match o["type"].as_str() {
+        Some("thread.started") => {
+            let id = o["thread_id"].as_str().unwrap_or("");
+            return vec![step("info", "", format!("Codex session {}", id.chars().take(8).collect::<String>()))];
+        }
+        Some("turn.completed") => {
+            let n = |k: &str| o["usage"][k].as_u64().unwrap_or(0);
+            let cached = n("cached_input_tokens");
+            return vec![step("info", "", format!("Done · {} in{} · {} out", tokens(n("input_tokens")),
+                if cached > 0 { format!(" ({} cached)", tokens(cached)) } else { String::new() }, tokens(n("output_tokens"))))];
+        }
+        Some("turn.failed") | Some("error") => {
+            let msg = o["message"].as_str().or(o["error"]["message"].as_str()).unwrap_or("Codex hit an error.");
+            let mut s = step("info", "", msg.into());
+            s.failed = true;
+            return vec![s];
+        }
+        _ => {}
+    }
+    let item = &o["item"];
+    let (started, done, updated) = (o["type"] == "item.started", o["type"] == "item.completed", o["type"] == "item.updated");
+    let text = |k: &str| item[k].as_str().unwrap_or("").to_string();
+    match item["type"].as_str() {
+        Some("command_execution") if started => vec![step("tool", "Shell", clip(&text("command"), 4000))],
+        Some("command_execution") if done => {
+            let out = text("aggregated_output");
+            let mut s = step("output", "", clip(if out.is_empty() { "(no output)" } else { &out }, 5000));
+            s.failed = item["exit_code"].as_i64().unwrap_or(0) != 0;
+            vec![s]
+        }
+        Some("file_change") if done => vec![step("tool", "Edit", item["changes"].as_array().into_iter().flatten()
+            .map(|c| format!("{} {}", c["kind"].as_str().unwrap_or("edit"), c["path"].as_str().unwrap_or(""))).collect::<Vec<_>>().join("\n"))],
+        Some("reasoning") if done && !text("text").is_empty() => vec![step("thinking", "", clip(&text("text"), 5000))],
+        Some("agent_message") if done && !text("text").is_empty() => vec![step("note", "", clip(&text("text"), 5000))],
+        Some("web_search") if done => vec![step("tool", "Web search", text("query"))],
+        Some("mcp_tool_call") if started => vec![step("tool", &format!("{} {}", item["server"].as_str().unwrap_or("mcp"), text("tool")),
+            clip(&serde_json::to_string_pretty(&item["arguments"]).unwrap_or_default(), 4000))],
+        Some("todo_list") if started || updated => vec![step("tool", "Plan", item["items"].as_array().into_iter().flatten()
+            .map(|i| format!("{} {}", if i["completed"].as_bool() == Some(true) { "[x]" } else { "[ ]" }, i["text"].as_str().unwrap_or("")))
+            .collect::<Vec<_>>().join("\n"))],
+        _ => vec![],
+    }
 }
 
 // MARK: usage
@@ -527,7 +757,9 @@ fn run_codex(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
     if let Some(s) = &req.session { cmd.args(["resume", s]); }
     cmd.args(["--json", "--skip-git-repo-check"]);
     if req.full_access { cmd.arg("--dangerously-bypass-approvals-and-sandbox"); }
-    else { cmd.args(["-c", "sandbox_mode=\"workspace-write\""]); }
+    // Without a Windows sandbox picked, Codex refuses every command ("blocked by policy"). The unelevated one
+    // needs no admin setup and still keeps writes inside the project folder.
+    else { cmd.args(["-c", "sandbox_mode=\"workspace-write\"", "-c", "windows.sandbox=\"unelevated\""]); }
     if !req.model.is_empty() { cmd.args(["-m", &req.model]); }
     for p in &req.pictures { cmd.args(["-i", p]); }
     cmd.arg("-");
@@ -538,12 +770,13 @@ fn run_codex(app: &AppHandle, shared: &Shared, req: &TurnReq) -> TurnOut {
     let turn = req.turn.clone();
     let res = drive(shared, &req.turn, cmd, &req.prompt, |line| {
         let Ok(v) = serde_json::from_str::<Value>(line) else { return };
+        emit_work(app, &turn, codex_steps(&v));
         match v["type"].as_str() {
             Some("thread.started") => if let Some(s) = v["thread_id"].as_str() { out.session = Some(s.into()) },
             Some("item.started") => if let Some(t) = v["item"]["type"].as_str() { emit(app, &turn, "step", t) },
             Some("item.completed") => {
                 if v["item"]["type"] == "agent_message" {
-                    if let Some(t) = v["item"]["text"].as_str() { texts.push(t.to_string()); }
+                    if let Some(t) = v["item"]["text"].as_str() { if !t.trim().is_empty() { texts.push(t.trim().to_string()); } }
                 }
             }
             Some("error") => failure = v["message"].as_str().map(String::from),
