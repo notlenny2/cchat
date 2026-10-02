@@ -291,6 +291,9 @@ struct ChatView: View {
                             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
                                 .stroke(LinearGradient(colors: [Clay.shadow.opacity(0.22), .white.opacity(0.6)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5))
                     )
+                #if CCHAT_SOLO
+                SoloExtras.ComposerButtons(draft: $draft)
+                #endif
                 Button(action: sendDraft) {
                     let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty
                     Image(systemName: "arrow.up")
