@@ -130,8 +130,8 @@ struct SubContactSheet: View {
             }
             HStack {
                 Text("Quick pick:").foregroundStyle(.secondary)
-                Menu("The Team") {
-                    ForEach(TeamPreset.allCases) { t in
+                Menu("My Team") {
+                    ForEach(store.team) { t in
                         Button(t.name) { name = t.name; role = t.role }
                     }
                 }

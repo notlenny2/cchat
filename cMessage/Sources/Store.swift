@@ -6,6 +6,9 @@ import AppKit
 final class Store: ObservableObject {
     @Published var contacts: [Contact] = []
     @Published var conversations: [Conversation] = []
+    /// The user's own team ("Build my team"); nil = the classic seven. Read it through `team`.
+    @Published private(set) var ownTeam: [TeamMember]?
+    var team: [TeamMember] { ownTeam ?? TeamMember.classic }
     @Published var selectedId: UUID?
     /// conversationId -> contact currently "typing".
     @Published var typing: [UUID: UUID] = [:] { didSet { version += 1 } }
@@ -139,6 +142,7 @@ final class Store: ObservableObject {
             let d = try JSONDecoder().decode(StoreData.self, from: data)
             contacts = d.contacts
             conversations = d.conversations
+            ownTeam = d.team
             // Anything owed a reply when the app last quit is dropped rather than silently re-run.
             for i in conversations.indices { conversations[i].pending = [] }
         } catch {
@@ -150,7 +154,7 @@ final class Store: ObservableObject {
     func save() {
         version += 1
         do {
-            let data = try JSONEncoder().encode(StoreData(contacts: contacts, conversations: conversations))
+            let data = try JSONEncoder().encode(StoreData(contacts: contacts, conversations: conversations, team: ownTeam))
             try data.write(to: Self.fileURL, options: [.atomic])
         } catch { Log.error("store save failed: \(error)") }
         // Dock icon shows how many chats are waiting on the user.
@@ -634,8 +638,8 @@ final class Store: ObservableObject {
     }
 
     private func directorsLast(_ cs: [Contact]) -> [UUID] {
-        let d = cs.filter { $0.name.lowercased().contains("director") }
-        return (cs.filter { !$0.name.lowercased().contains("director") } + d).map(\.id)
+        let last = { (c: Contact) in c.lastWord ?? c.name.lowercased().contains("director") }
+        return (cs.filter { !last($0) } + cs.filter(last)).map(\.id)
     }
 
     /// Asks a small, fast model which group member is best suited to the user's latest message.
@@ -1083,16 +1087,61 @@ final class Store: ObservableObject {
         return (body.trimmingCharacters(in: .whitespacesAndNewlines), Array(opens.prefix(2)))
     }
 
+    /// Saves the user's own team (nil goes back to the classic seven). Blank seats are dropped.
+    func setTeam(_ members: [TeamMember]?) {
+        let kept = members?.filter { !$0.isBlank }
+        ownTeam = (kept?.isEmpty ?? true) ? nil : kept
+        save()
+        Log.info("team saved: \(team.count) members\(ownTeam == nil ? " (classic)" : "")")
+    }
+
+    /// Turns the user's plain description ("a writers' room: a tough editor, a hype person...") into a
+    /// first draft of a team with a quick Haiku call. nil if Claude isn't reachable or the answer won't parse.
+    func draftTeam(from description: String) async -> [TeamMember]? {
+        let system = """
+        You design a small advisory team of AI personas from the user's description. Reply with ONLY a JSON array, \
+        no prose, no code fences. Each item: {"name": short title (1-2 words, like "Editor"), "job": one or two \
+        sentences on what they care about and push for, "personality": one sentence on how they come across, \
+        "lastWord": true for exactly one member who weighs the others and makes the call, false otherwise}. \
+        3 to 8 members. Make them disagree in useful ways. Plain English, no jargon.
+        """
+        guard let text = try? await ClaudeRunner.quick(prompt: description, system: system),
+              let start = text.firstIndex(of: "["), let end = text.lastIndex(of: "]"), start < end,
+              let raw = try? JSONSerialization.jsonObject(with: Data(text[start...end].utf8)) as? [[String: Any]]
+        else { return nil }
+        var team = raw.prefix(10).compactMap { o -> TeamMember? in
+            guard var name = (o["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+            if name.lowercased().hasPrefix("the ") { name = String(name.dropFirst(4)) }
+            guard !name.isEmpty, name.count <= 40 else { return nil }
+            return TeamMember(name: name, job: String((o["job"] as? String ?? "").prefix(600)),
+                              personality: String((o["personality"] as? String ?? "").prefix(400)),
+                              lastWord: o["lastWord"] as? Bool ?? false)
+        }
+        // Exactly one gets the final word.
+        if let first = team.firstIndex(where: \.lastWord) {
+            for i in team.indices where i != first { team[i].lastWord = false }
+        }
+        return team.isEmpty ? nil : team
+    }
+
     /// Calls the team in on a project: a chat with each member picked (reusing any that already exist),
     /// and optionally one group chat with all of them. Each can be handed the same opening line.
+    /// A member who's already on the project gets their latest job and personality from the team.
     @discardableResult
-    func callInTeam(on project: Contact, members: [TeamPreset], asGroup: Bool, opener: String,
+    func callInTeam(on project: Contact, members: [TeamMember], asGroup: Bool, opener: String,
                     engine: Engine = .claude, model: String? = nil) -> UUID? {
         guard !members.isEmpty, !project.isSubContact else { return nil }
         let existing = subContacts(of: project.id)
-        let people: [Contact] = members.map { preset in
-            existing.first { $0.name.caseInsensitiveCompare(preset.name) == .orderedSame }
-                ?? addSubContact(to: project, name: preset.name, role: preset.role)
+        let people: [Contact] = members.map { m in
+            let name = m.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            var c = existing.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+                ?? addSubContact(to: project, name: name, role: m.role)
+            if c.role != m.role || (c.lastWord ?? false) != m.lastWord {
+                c.role = m.role
+                c.lastWord = m.lastWord
+                update(c)
+            }
+            return c
         }
         let note = opener.trimmingCharacters(in: .whitespacesAndNewlines)
         let group = asGroup && people.count > 1

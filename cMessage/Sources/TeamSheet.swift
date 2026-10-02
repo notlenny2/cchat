@@ -1,12 +1,15 @@
 import SwiftUI
 
-/// "Call in the team": pick which of the seven personas to pull onto a project. Each gets its own chat
+/// "Call in the team": pick which of the user's team (their own from Build My Team, or the classic seven) to pull onto a project. Each gets its own chat
 /// (an existing one is reused, never duplicated), and optionally they all go in one group too.
 struct TeamSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
     let project: Contact
-    @State private var picked: Set<TeamPreset> = Set(TeamPreset.allCases)
+    /// nil = everyone on the team.
+    @State private var picked: Set<UUID>?
+    @State private var building = false
+    private var chosen: Set<UUID> { picked ?? Set(store.team.map(\.id)) }
     @State private var asGroup = true
     @State private var opener = ""
     @State private var engine: Engine = .claude
@@ -21,16 +24,19 @@ struct TeamSheet: View {
                     Text("on \(project.name)").foregroundStyle(Clay.inkSoft)
                 }
                 Spacer()
-                Button(picked.count == TeamPreset.allCases.count ? "None" : "All") {
-                    picked = picked.count == TeamPreset.allCases.count ? [] : Set(TeamPreset.allCases)
+                Button(store.ownTeam == nil ? "Build My Team…" : "Edit My Team…") { building = true }
+                Button(chosen.count == store.team.count ? "None" : "All") {
+                    picked = chosen.count == store.team.count ? [] : Set(store.team.map(\.id))
                 }
             }
             List {
-                ForEach(TeamPreset.allCases) { t in
-                    let on = picked.contains(t)
+                ForEach(store.team) { t in
+                    let on = chosen.contains(t.id)
                     let already = store.subContacts(of: project.id).contains { $0.name.caseInsensitiveCompare(t.name) == .orderedSame }
                     Button {
-                        if on { picked.remove(t) } else { picked.insert(t) }
+                        var s = chosen
+                        if on { s.remove(t.id) } else { s.insert(t.id) }
+                        picked = s
                     } label: {
                         HStack(alignment: .top) {
                             Image(systemName: on ? "checkmark.circle.fill" : "circle")
@@ -40,7 +46,7 @@ struct TeamSheet: View {
                                     Text(t.name).font(.headline)
                                     if already { Text("already here").font(.caption2).foregroundStyle(Clay.inkSoft) }
                                 }
-                                Text(t.role).font(.caption).foregroundStyle(Clay.inkSoft).lineLimit(2)
+                                Text(t.job).font(.caption).foregroundStyle(Clay.inkSoft).lineLimit(2)
                             }
                             Spacer()
                         }
@@ -68,17 +74,19 @@ struct TeamSheet: View {
                 .fixedSize()
                 Spacer()
                 Button("Cancel") { dismiss() }
-                Button(picked.count == 1 ? "Call in 1" : "Call in \(picked.count)") {
-                    let members = TeamPreset.allCases.filter { picked.contains($0) }
+                Button("Call in \(chosen.count)") {
+                    let members = store.team.filter { chosen.contains($0.id) }
                     store.callInTeam(on: project, members: members, asGroup: asGroup, opener: opener,
                                      engine: engine, model: model)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(picked.isEmpty)
+                .disabled(chosen.isEmpty)
             }
         }
         .padding(20)
-        .frame(width: 520, height: 560)
+        .frame(width: 560, height: 560)
+        // A fresh team means a fresh pick (ids changed).
+        .sheet(isPresented: $building, onDismiss: { picked = nil }) { TeamBuilder().environmentObject(store) }
     }
 }

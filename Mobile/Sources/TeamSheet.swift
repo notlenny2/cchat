@@ -6,24 +6,31 @@ struct TeamSheet: View {
     @Environment(\.dismiss) private var dismiss
     let project: RemoteContact
     let opened: (UUID) -> Void
-    @State private var picked: Set<TeamPreset> = Set(TeamPreset.allCases)
+    @State private var picked: Set<UUID>?
     @State private var asGroup = true
     @State private var opener = ""
+
+    /// The Mac's team (the user's own, or the classic seven).
+    private var team: [TeamMember] { client.snapshot?.team ?? TeamMember.classic }
+    private var chosen: Set<UUID> { picked ?? Set(team.map(\.id)) }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    ForEach(TeamPreset.allCases) { t in
+                    ForEach(team) { t in
+                        let on = chosen.contains(t.id)
                         Button {
-                            if picked.contains(t) { picked.remove(t) } else { picked.insert(t) }
+                            var s = chosen
+                            if on { s.remove(t.id) } else { s.insert(t.id) }
+                            picked = s
                         } label: {
                             HStack(alignment: .top) {
-                                Image(systemName: picked.contains(t) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(picked.contains(t) ? Clay.terracotta : Clay.inkSoft)
+                                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(on ? Clay.terracotta : Clay.inkSoft)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(t.name).font(.headline).foregroundStyle(Clay.ink)
-                                    Text(t.role).font(.caption).foregroundStyle(Clay.inkSoft).lineLimit(2)
+                                    Text(t.job).font(.caption).foregroundStyle(Clay.inkSoft).lineLimit(2)
                                 }
                             }
                         }
@@ -39,15 +46,15 @@ struct TeamSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Call in \(picked.count)") {
-                        let names = TeamPreset.allCases.filter { picked.contains($0) }.map(\.name)
+                    Button("Call in \(chosen.count)") {
+                        let names = team.filter { chosen.contains($0.id) }.map(\.name)
                         Task {
                             if let id = await client.callInTeam(project.id, members: names, asGroup: asGroup,
                                                                 opener: opener, engine: .claude, model: "") { opened(id) }
                             dismiss()
                         }
                     }
-                    .disabled(picked.isEmpty)
+                    .disabled(chosen.isEmpty)
                 }
             }
         }

@@ -58,6 +58,7 @@ struct CMessageApp: App {
                     .keyboardShortcut("n")
                 Button("Contacts") { NotificationCenter.default.post(name: .showContacts, object: nil) }
                     .keyboardShortcut("k")
+                Button("Build My Team…") { NotificationCenter.default.post(name: .buildTeam, object: nil) }
                 Button("Show or Hide Terminal") { TerminalPool.shared.toggle() }
                     .keyboardShortcut("`", modifiers: .control)
                 Divider()
@@ -80,6 +81,7 @@ extension Notification.Name {
     static let showContacts = Notification.Name("cmessage.showContacts")
     static let renameChat = Notification.Name("cmessage.renameChat")
     static let showPairing = Notification.Name("cmessage.showPairing")
+    static let buildTeam = Notification.Name("cmessage.buildTeam")
 }
 
 // MARK: - Text size

@@ -316,7 +316,7 @@ final class RemoteServer: ObservableObject {
                 store.selectedId = before
             } else { res.ok = false; res.error = "Couldn't make that project." }
         case .team:
-            let members = TeamPreset.allCases.filter { t in (req.names ?? []).contains { $0.caseInsensitiveCompare(t.name) == .orderedSame } }
+            let members = store.team.filter { t in (req.names ?? []).contains { $0.caseInsensitiveCompare(t.name) == .orderedSame } }
             if let id = req.contact, let p = store.contact(id), !p.isSubContact, !members.isEmpty {
                 let before = store.selectedId
                 res.convId = store.callInTeam(on: p, members: members, asGroup: req.wait ?? true,
@@ -375,7 +375,8 @@ final class RemoteServer: ObservableObject {
                               waitingFor: store.waitingFor,
                               // Only engines this Mac can run; the phone offers exactly these.
                               models: Dictionary(uniqueKeysWithValues: store.availableEngines.map { ($0.rawValue, store.models(for: $0)) }),
-                              usage: store.usage.isEmpty ? nil : store.usage)
+                              usage: store.usage.isEmpty ? nil : store.usage,
+                              team: store.team)
     }
 
     private static func scaled(_ path: String, maxSide: CGFloat) -> Data? {

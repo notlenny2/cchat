@@ -133,6 +133,8 @@ struct RemoteSnapshot: Codable {
     var models: [String: [ModelOption]]? = nil
     /// How much of the Claude and Codex plans is used, for the meter under the chat list.
     var usage: UsageReport? = nil
+    /// The user's team for "Call in the team" (their own, or the classic seven). Optional for older Macs.
+    var team: [TeamMember]? = nil
 }
 
 struct RPCRequest: Codable {

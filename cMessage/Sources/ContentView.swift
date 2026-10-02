@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var showNew = false
     @State private var showContacts = false
     @State private var showPairing = false
+    @State private var buildTeam = false
     @State private var showSetup = !Prefs.setupDone
     @State private var renaming: Conversation?
     @State private var newName = ""
@@ -33,6 +34,8 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showContacts)) { _ in showContacts = true }
         .onReceive(NotificationCenter.default.publisher(for: .showPairing)) { _ in showPairing = true }
         .sheet(isPresented: $showPairing) { PairingSheet() }
+        .onReceive(NotificationCenter.default.publisher(for: .buildTeam)) { _ in buildTeam = true }
+        .sheet(isPresented: $buildTeam) { TeamBuilder().environmentObject(store) }
         // With no contacts yet, the main window itself shows "Start your first project"; no Contacts book pops up.
         .sheet(isPresented: $showSetup) {
             SetupView { showSetup = false }

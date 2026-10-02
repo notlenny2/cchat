@@ -19,6 +19,8 @@ struct Contact: Identifiable, Codable, Hashable {
     /// Contact photo: the project's app icon (found automatically) or a picture the user chose.
     var iconPath: String? = nil
     var iconSearched: Bool? = nil
+    /// Answers last in a group and pulls the others together (a team member marked "gets the final word").
+    var lastWord: Bool? = nil
 
     var isSubContact: Bool { parentId != nil }
     var initials: String {
@@ -217,24 +219,51 @@ enum ChatFolders {
 struct StoreData: Codable {
     var contacts: [Contact] = []
     var conversations: [Conversation] = []
+    /// The user's own team from "Build my team". nil = the classic seven.
+    var team: [TeamMember]? = nil
 }
 
-/// The planning team from the author's planning personas, offered as one-tap sub-contact presets.
-enum TeamPreset: String, CaseIterable, Identifiable {
-    case director, designer, optimizer, engineer, salesman, marketer, futurist
-    var id: String { rawValue }
-    var name: String { rawValue.capitalized }
+/// One seat on the user's team: who they are, what they care about, what they're like.
+/// Called in on a project, each becomes a sub-contact whose role is `role`.
+struct TeamMember: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var name: String
+    /// What they care about / their job in the room.
+    var job: String = ""
+    /// How they come across: tone, temperament, quirks.
+    var personality: String = ""
+    /// Answers after everyone else in a group and pulls it together (like the Director).
+    var lastWord: Bool = false
+
     var role: String {
-        switch self {
-        case .director: return "The Director. Patient and calculating, weighs the strong options against each other and gives advice on next steps. Has shipped major apps at scale, patient with an amateur, wants the app to succeed at scale."
-        case .designer: return "The Designer. The UX person. Why are you opening the app, what excites you, how easy is it to use and look at? Wants software to be a pleasure to use; less concerned with what it does."
-        case .optimizer: return "The Optimizer. Lean and mean, hates extra code that goes nowhere and redundancy. Wants the app fast and sensible, keeps the Designer and Engineer from getting too crazy."
-        case .engineer: return "The Engineer. UX be damned, does it WORK? Makes features work as well as possible without much thought for optimization or UI."
-        case .salesman: return "The Salesman. How can this make money ethically? Premium tiers, unlockables, drops, sponsorships, subscriptions."
-        case .marketer: return "The Marketer. How does this generate buzz and get widely adopted? Campaigns, viral angles, community."
-        case .futurist: return "The Futurist. Always has a new feature, tuned into what's newly possible and what's never been done. Pushes the project in exciting new directions."
-        }
+        var s = name.lowercased().hasPrefix("the ") ? "\(name)." : "The \(name)."
+        let j = job.trimmingCharacters(in: .whitespacesAndNewlines)
+        let p = personality.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !j.isEmpty { s += " " + j + (j.hasSuffix(".") ? "" : ".") }
+        if !p.isEmpty { s += " Personality: " + p + (p.hasSuffix(".") ? "" : ".") }
+        if lastWord { s += " In a group you speak last: weigh what the others said and give one clear recommendation." }
+        return s
     }
+
+    var isBlank: Bool { name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// The classic seven, split into job and personality so they can be edited as a starting point.
+    static let classic: [TeamMember] = [
+        TeamMember(name: "Director", job: "Oversees everyone, weighs the strong options against each other and gives advice on next steps. Has shipped major apps at scale and wants this one to succeed at scale.",
+                   personality: "Patient and calculating, patient with an amateur.", lastWord: true),
+        TeamMember(name: "Designer", job: "The UX person. Why are you opening the app, what excites you, how easy is it to use and look at? Less concerned with what it does.",
+                   personality: "Wants software to be a pleasure to use. Thinks like an Italian supercar."),
+        TeamMember(name: "Optimizer", job: "Efficiency. Hates extra code that goes nowhere and redundancy, wants the app fast and sensible.",
+                   personality: "Lean and mean, keeps the Designer and Engineer from getting too crazy."),
+        TeamMember(name: "Engineer", job: "Does it WORK? Makes features work as well as possible without much thought for optimization or UI.",
+                   personality: "UX be damned, built like a Rolls Royce."),
+        TeamMember(name: "Salesman", job: "How can this make money ethically? Premium tiers, unlockables, drops, sponsorships, subscriptions.",
+                   personality: "Not above selling for a dollar."),
+        TeamMember(name: "Marketer", job: "How does this generate buzz and get widely adopted? Campaigns, viral angles, community.",
+                   personality: "Thinks in launch events and livestreams."),
+        TeamMember(name: "Futurist", job: "Always has a new feature, tuned into what's newly possible and what's never been done. Pushes the project in new directions.",
+                   personality: "Excitable dreamer. If it were a car, it would fly."),
+    ]
 }
 
 extension Array where Element == Message {
