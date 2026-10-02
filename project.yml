@@ -10,8 +10,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.5"
-    CURRENT_PROJECT_VERSION: "6"
+    MARKETING_VERSION: "0.1.6"
+    CURRENT_PROJECT_VERSION: "7"
 targets:
   # cChat for Mac. (An optional personal build can live beside it in personal.yml, not part of this repo.)
   cChat:
