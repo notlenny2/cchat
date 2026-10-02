@@ -20,8 +20,13 @@ enum Remote {
 /// bodies already sealed with the pairing key. Both names it knows a Mac by are one-way HMACs of that key, so it
 /// can't recover the key, and nobody without the key can find the mailbox or answer as the Mac.
 enum Relay {
-    /// The public relay. `CCHAT_RELAY` (tests) or the `relayURL` default override it; empty = off.
+    /// The built-in relay: the owner's build sets its own (Personal/, not in git); everyone else's is off until
+    /// one is shared on purpose. `CCHAT_RELAY` (tests) or the `relayURL` default override it; empty = off.
+    #if CCHAT_PERSONAL
+    static let builtIn = PersonalRelay.url
+    #else
     static let builtIn = ""
+    #endif
     static var baseURL: String? {
         let s = ProcessInfo.processInfo.environment["CCHAT_RELAY"] ?? UserDefaults.standard.string(forKey: "relayURL") ?? builtIn
         let t = s.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))

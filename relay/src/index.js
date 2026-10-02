@@ -18,8 +18,10 @@ const BUCKET = 240; // burst (the phone fetches every contact's picture at start
 const REFILL = 8; // requests per second, sustained
 const PUSH_BUCKET = 30; // notifications: a burst when a group of agents all answer at once
 const PUSH_REFILL = 1 / 10; // then one every 10 seconds
-// Only cChat's own phone apps can be notified through this relay.
-const TOPICS = new Set(["io.github.notlenny2.cchat.mobile"]);
+// Only cChat's own phone apps can be notified through this relay. A private build's app id can be added with
+// the APNS_TOPICS secret (comma separated) so it never has to live in the code.
+const PUBLIC_TOPICS = ["io.github.notlenny2.cchat.mobile"];
+const topics = (env) => new Set([...PUBLIC_TOPICS, ...String(env.APNS_TOPICS || "").split(",").map((t) => t.trim()).filter(Boolean)]);
 const DEVICE = /^[0-9a-f]{64,200}$/;
 const UUID = /^[0-9A-Fa-f-]{36}$/;
 
@@ -124,7 +126,7 @@ export class Mailbox {
     const raw = await request.text();
     if (raw.length > 4096) return text(413, "too big");
     try { n = JSON.parse(raw); } catch { return text(400, "bad json"); }
-    if (!n || !DEVICE.test(n.device || "") || !TOPICS.has(n.topic)) return text(400, "bad device");
+    if (!n || !DEVICE.test(n.device || "") || !topics(this.env).has(n.topic)) return text(400, "bad device");
     const title = String(n.title || "").slice(0, 80);
     const body = String(n.body || "").slice(0, 240);
     if (!body) return text(400, "empty");
