@@ -91,7 +91,6 @@ struct TeamBuilder: View {
                     choice("Go back to the classic seven", "Forget my team. People already on projects stay put.",
                            "arrow.uturn.backward") { store.setTeam(nil); dismiss() }
                 }
-                .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             HStack {
@@ -108,12 +107,11 @@ struct TeamBuilder: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.headline)
                     Text(detail).font(.caption).foregroundStyle(Clay.inkSoft).lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
             .padding(14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
             .clay(Clay.cream, radius: 16)
             .contentShape(Rectangle())
         }
