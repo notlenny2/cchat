@@ -40,6 +40,9 @@ struct CMessageApp: App {
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
                     // A one-contact build never listens on the network: no phone link, no relay.
                     if !Flavor.solo { RemoteServer.shared.attach(store) }
+                    #if CCHAT_SOLO
+                    SoloExtras.attach(store)     // the one-contact build's own extras (e.g. a voice)
+                    #endif
                     // Self-install rebuilds from the personal build's own source folder, so it's personal-build only.
                     if Flavor.personal { SelfUpdate.start(store) }
                 }

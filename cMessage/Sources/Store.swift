@@ -19,6 +19,8 @@ final class Store: ObservableObject {
     /// An agent's answer landed (or it said it's waiting on the user): chat, notification title, text.
     /// The phone link turns this into a notification.
     var onAgentReply: ((UUID, String, String) -> Void)?
+    /// The user just sent something (not another agent on their behalf).
+    var onUserSend: ((UUID) -> Void)?
     /// Goes up on every change, so the iPhone/iPad app can ask "anything new since N?".
     private(set) var version = 0
 
@@ -572,7 +574,7 @@ final class Store: ObservableObject {
         var m = Message(senderId: nil, text: text, attachments: attachments.isEmpty ? nil : attachments)
         m.from = from
         conversations[i].messages.append(m)
-        if from == nil { conversations[i].needsYou = nil }
+        if from == nil { conversations[i].needsYou = nil; onUserSend?(convId) }
         passed[convId] = nil
         if from != nil && selectedId != convId { conversations[i].unread = true }
         conversations[i].suggestions = []

@@ -78,6 +78,9 @@ struct ChatView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(showWork ? "Hide the work (View > Show the Work)" : "Show the work: commands, files, output")
+                #if CCHAT_SOLO
+                SoloExtras.HeaderButtons()
+                #endif
                 if store.isBusy(convId) {
                     Button("Stop") { store.stop(convId) }
                         .buttonStyle(.borderless).foregroundStyle(.red)
