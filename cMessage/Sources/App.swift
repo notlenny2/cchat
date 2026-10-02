@@ -82,6 +82,7 @@ struct CMessageApp: App {
         Button("Build My Team…") { NotificationCenter.default.post(name: .buildTeam, object: nil) }
         Button("Show or Hide Terminal") { TerminalPool.shared.toggle() }
             .keyboardShortcut("`", modifiers: .control)
+        Button("Start the Water Cooler Now") { WaterCooler.shared.start(store) }
         Divider()
         Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
     }

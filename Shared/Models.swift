@@ -168,6 +168,10 @@ struct Conversation: Identifiable, Codable, Hashable {
     /// `ChatFolders.other`). nil = its own project, worked out from its first member. Only tidies the list;
     /// the agents keep working in their own project folders.
     var folder: String? = nil
+    /// The Water Cooler: a nightly group where projects' Futurists and Designers trade ideas (see WaterCooler).
+    /// Talk only; nobody in it touches files or buzzes the user's phone.
+    var cooler: Bool? = nil
+    var isCooler: Bool { cooler == true }
 
     var isGroup: Bool { participantIds.count > 1 }
     var lastDate: Date { messages.last?.date ?? .distantPast }

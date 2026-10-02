@@ -51,6 +51,7 @@ final class Store: ObservableObject {
         usageTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshCodexUsage() }
             Task.detached(priority: .utility) { Backups.takeIfDue() }
+            Task { @MainActor in if let self { WaterCooler.shared.tick(self) } }
         }
     }
 
@@ -749,7 +750,7 @@ final class Store: ObservableObject {
                     if !Task.isCancelled, let j = self.index(of: convId),
                        !self.conversations[j].pending.isEmpty || self.conversations[j].routeNext == true { continue }
                     if next.isEmpty || Task.isCancelled {
-                        if let j = self.index(of: convId), self.conversations[j].isGroup,
+                        if let j = self.index(of: convId), self.conversations[j].isGroup, !self.conversations[j].isCooler,
                            self.repliesSinceUser(self.conversations[j]) >= Self.chatterLimit {
                             self.conversations[j].messages.append(Message(senderId: nil, text: "They've gone back and forth a few times. Say something to steer them.", kind: .system))
                         }
@@ -926,14 +927,15 @@ final class Store: ObservableObject {
                     if !next.isEmpty { conversations[j].suggestions = next }
                     if selectedId != convId { conversations[j].unread = true }
                 }
-                if let needs { conversations[j].needsYou = needs.isEmpty ? "\(displayName(agent)) is waiting on you" : needs }
+                // The Water Cooler is ideas only and runs overnight: it never flags or buzzes the user.
+                if let needs, !conv.isCooler { conversations[j].needsYou = needs.isEmpty ? "\(displayName(agent)) is waiting on you" : needs }
                 let said = pass ? nil : (body.isEmpty ? (media.isEmpty ? nil : "Sent you a picture.") : body)
-                if let text = said ?? conversations[j].needsYou.flatMap({ needs == nil ? nil : $0 }) {
+                if !conv.isCooler, let text = said ?? conversations[j].needsYou.flatMap({ needs == nil ? nil : $0 }) {
                     let who = displayName(agent)
                     let group = conversations[j].isGroup
                     onAgentReply?(convId, group ? title(for: conversations[j]) : who, group ? "\(who): \(text)" : text)
                 }
-                for open in opens {
+                for open in opens where !conv.isCooler {
                     if let made = openSubChat(asked: agent, name: open.name, role: open.role, message: open.message, like: conv),
                        let j2 = index(of: convId) {
                         conversations[j2].messages.append(Message(senderId: nil, text: "\(displayName(agent)) started a chat with \(displayName(made)).", kind: .system))
@@ -1079,6 +1081,15 @@ final class Store: ObservableObject {
             New messages arrive as "Name: text". Speak only as yourself, in one voice. Never write lines for the other people here or for any other persona or team member; they answer for themselves.
             Stay in your own lane, build on or push back on what others said, never repeat them.
             If you have nothing useful to add, reply with exactly PASS and nothing else.
+            """
+        }
+        if conv.isCooler {
+            s += """
+
+            This is the Water Cooler: you're here for your project, trading ideas with people from \(me)'s other projects.
+            Talk only. You may read your project's files for context, but don't edit, build, commit, install or run
+            anything, and don't open chats or flag \(me). Messages from "Water Cooler" are the host steering the talk.
+            Be specific to the projects in the room; a concrete idea beats a general one.
             """
         }
         return s
