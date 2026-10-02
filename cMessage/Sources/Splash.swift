@@ -40,7 +40,7 @@ struct SplashScene: View {
                             .offset(y: -s * 0.05)   // centered on the body (the tail hangs below it)
                         }
                         .offset(x: s * 0.19, y: s * 0.11)
-                    Text("cChat")
+                    Text(Flavor.appName)
                         .font(.system(size: s * 0.19, weight: .bold, design: .rounded))
                         .foregroundStyle(Clay.ink)
                         .opacity(hint)

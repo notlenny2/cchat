@@ -15,6 +15,22 @@ struct ContentView: View {
     @AppStorage("foldedFolders") private var foldedFolders = ""
 
     var body: some View {
+        if Flavor.solo { solo } else { full }
+    }
+
+    /// A one-contact build: no chat list, no contacts, just the one chat filling the window.
+    private var solo: some View {
+        Group {
+            if let id = store.selectedId, store.index(of: id) != nil {
+                ChatView(convId: id).id(id)
+            } else {
+                Clay.canvas
+            }
+        }
+        .toolbarBackground(.hidden, for: .windowToolbar)
+    }
+
+    private var full: some View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 260, ideal: 340, max: 440)

@@ -59,6 +59,36 @@ struct ChatView: View {
     // MARK: Header
 
     private func header(_ conv: Conversation) -> some View {
+        if Flavor.solo { return AnyView(soloHeader(conv)) }
+        return AnyView(fullHeader(conv))
+    }
+
+    /// A one-contact build: just who you're talking to, the work toggle and Stop. No info sheet (that's where
+    /// Full Access lives), no renaming, no model switching; the agent's own folder settings decide those.
+    private func soloHeader(_ conv: Conversation) -> some View {
+        VStack(spacing: 3) {
+            GroupAvatar(ids: conv.participantIds, size: 44)
+            Text(store.title(for: conv)).zfont(.caption, weight: .medium).foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .overlay(alignment: .trailing) {
+            HStack(spacing: 12) {
+                Button { showWork.toggle() } label: {
+                    Image(systemName: "apple.terminal").foregroundStyle(showWork ? Clay.terracotta : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(showWork ? "Hide the work (View > Show the Work)" : "Show the work: commands, files, output")
+                if store.isBusy(convId) {
+                    Button("Stop") { store.stop(convId) }
+                        .buttonStyle(.borderless).foregroundStyle(.red)
+                }
+            }
+            .padding(.trailing, 16)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private func fullHeader(_ conv: Conversation) -> some View {
         HStack {
             Spacer()
             Button { showInfo = true } label: {

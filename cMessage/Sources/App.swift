@@ -26,19 +26,20 @@ struct CMessageApp: App {
     @State private var splash = true
 
     var body: some Scene {
-        WindowGroup("cChat") {
+        WindowGroup(Flavor.appName) {
             ContentView()
                 .environmentObject(store)
                 .environment(\.zoom, zoom)
                 .fontDesign(.rounded)
                 .tint(Clay.terracotta)
-                .frame(minWidth: 760, minHeight: 480)
+                .frame(minWidth: Flavor.solo ? 420 : 760, minHeight: 480)
                 // The clay moment at launch: the icon pressed together, then it melts into the chats. Skippable.
                 .overlay { if splash { SplashOverlay { splash = false } } }
                 .onAppear {
                     Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
-                    RemoteServer.shared.attach(store)
+                    // A one-contact build never listens on the network: no phone link, no relay.
+                    if !Flavor.solo { RemoteServer.shared.attach(store) }
                     // Self-install rebuilds from the personal build's own source folder, so it's personal-build only.
                     if Flavor.personal { SelfUpdate.start(store) }
                 }
@@ -49,20 +50,15 @@ struct CMessageApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
 
         // cChat > Settings… (⌘,): name, Claude Code / Codex sign-in, projects folder.
+        // A one-contact build has nothing to set: one agent, one folder, one engine.
         Settings {
-            SetupView().environmentObject(store).fontDesign(.rounded).tint(Clay.terracotta)
+            if Flavor.solo { EmptyView() } else {
+                SetupView().environmentObject(store).fontDesign(.rounded).tint(Clay.terracotta)
+            }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Message") { NotificationCenter.default.post(name: .newMessage, object: nil) }
-                    .keyboardShortcut("n")
-                Button("Contacts") { NotificationCenter.default.post(name: .showContacts, object: nil) }
-                    .keyboardShortcut("k")
-                Button("Build My Team…") { NotificationCenter.default.post(name: .buildTeam, object: nil) }
-                Button("Show or Hide Terminal") { TerminalPool.shared.toggle() }
-                    .keyboardShortcut("`", modifiers: .control)
-                Divider()
-                Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
+                if !Flavor.solo { fileMenu }
             }
             CommandGroup(before: .toolbar) {
                 Button("Bigger Text") { Zoom.step(0.1) }.keyboardShortcut("=")
@@ -73,6 +69,18 @@ struct CMessageApp: App {
                 Divider()
             }
         }
+    }
+
+    @ViewBuilder private var fileMenu: some View {
+        Button("New Message") { NotificationCenter.default.post(name: .newMessage, object: nil) }
+            .keyboardShortcut("n")
+        Button("Contacts") { NotificationCenter.default.post(name: .showContacts, object: nil) }
+            .keyboardShortcut("k")
+        Button("Build My Team…") { NotificationCenter.default.post(name: .buildTeam, object: nil) }
+        Button("Show or Hide Terminal") { TerminalPool.shared.toggle() }
+            .keyboardShortcut("`", modifiers: .control)
+        Divider()
+        Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
     }
 }
 

@@ -41,7 +41,8 @@ final class Store: ObservableObject {
     private var usageTimer: Timer?
 
     init() {
-        load(); flagUnanswered(); findMissingIcons()
+        load(); flagUnanswered()
+        if Flavor.solo { settleSolo() } else { findMissingIcons() }
         ClaudeRunner.onUsage = { u in Task { @MainActor [weak self] in self?.setUsage(claude: u) } }
         refreshCodexUsage()
         Task.detached(priority: .utility) { Backups.takeIfDue() }
@@ -122,6 +123,27 @@ final class Store: ObservableObject {
         save()
     }
 
+    /// A one-contact build: exactly one agent, locked to its folder, on its model, never with Full Access,
+    /// and its one chat always open. Re-applied at every launch so nothing can drift.
+    private func settleSolo() {
+        #if CCHAT_SOLO
+        var c = contacts.first { !$0.isSubContact && $0.projectPath == Solo.folder }
+            ?? Contact(name: Solo.name, projectPath: Solo.folder)
+        c.name = Solo.name
+        c.model = Solo.model
+        c.fullAccess = false
+        c.parentId = nil
+        c.iconPath = Bundle.main.path(forResource: Solo.portrait, ofType: "png")
+        c.iconSearched = true
+        contacts = [c]
+        conversations.removeAll { $0.participantIds != [c.id] || ($0.engine ?? .claude) != .claude }
+        if conversations.isEmpty { conversations = [Conversation(participantIds: [c.id])] }
+        for i in conversations.indices { conversations[i].hidden = false; conversations[i].model = nil }
+        selectedId = conversations[0].id
+        save()
+        #endif
+    }
+
     /// If the app was restarted mid-reply, say so and offer a one-tap way to pick back up.
     private func flagUnanswered() {
         for i in conversations.indices {
@@ -129,7 +151,7 @@ final class Store: ObservableObject {
                   last.isFromUser, last.kind == .normal,
                   Date().timeIntervalSince(last.date) < 6 * 3600,
                   conversations[i].messages.last?.kind != .system else { continue }
-            conversations[i].messages.append(Message(senderId: nil, text: "cChat restarted before this got an answer.", kind: .system))
+            conversations[i].messages.append(Message(senderId: nil, text: "\(Flavor.appName) restarted before this got an answer.", kind: .system))
             conversations[i].suggestions = ["Keep going where you left off"]
         }
     }
@@ -917,7 +939,9 @@ final class Store: ObservableObject {
                 }
                 if !result.deniedTools.isEmpty {
                     let tools = Array(Set(result.deniedTools)).sorted().joined(separator: ", ")
-                    conversations[j].messages.append(Message(senderId: agentId, text: "\(displayName(agent)) was blocked from using: \(tools). Turn on Full Access in their info if you trust it.", kind: .system))
+                    conversations[j].messages.append(Message(senderId: agentId, text: Flavor.solo
+                        ? "Safety rules stopped \(displayName(agent)) from using: \(tools)."
+                        : "\(displayName(agent)) was blocked from using: \(tools). Turn on Full Access in their info if you trust it.", kind: .system))
                     if conversations[j].needsYou == nil { conversations[j].needsYou = "\(displayName(agent)) was blocked and needs permission" }
                 }
             }
@@ -1008,6 +1032,7 @@ final class Store: ObservableObject {
     private func systemPrompt(for agent: Contact, in conv: Conversation) -> String {
         let me = Prefs.userName
         let otherAgent = "another of \(me)'s agents"
+        if Flavor.solo { return soloPrompt(for: agent) }
         var s = "You are \(displayName(agent)), texting with \(me) in cChat, a text-message style app."
         if !agent.role.isEmpty { s += "\nYour role: \(agent.role)" }
         s += "\nYou work in the project folder \(agent.projectPath). Read its CLAUDE.md for context when it matters."
@@ -1055,6 +1080,28 @@ final class Store: ObservableObject {
             """
         }
         return s
+    }
+
+    /// The one-contact build: the agent's own CLAUDE.md says who she is and what she may do, so this only covers
+    /// how the app shows things. No specialists (there are no other contacts) and nothing about shared folders.
+    private func soloPrompt(for agent: Contact) -> String {
+        let me = Prefs.userName
+        return """
+        You are \(displayName(agent)), texting with \(me) in \(Flavor.appName), a text-message style app that holds only you.
+        Your folder is \(agent.projectPath). Its CLAUDE.md is who you are and what you may do; follow it.
+
+        How the app shows your reply:
+        - It reads like a text message: short, warm, plain English. Never paste code, commands, file contents or file paths.
+        - Never say you did something unless a tool actually did it.
+        - To show \(me) a picture or video, put it on its own line as <<show: /absolute/path/to/file.png>> (a web link
+          works too). This is the one place a file path is fine.
+        - When your reply stops and waits on \(me) (a decision, an OK before you change or send something, a login, or
+          info only \(me) has), put this on its own line:
+          <<needs you: a few words on what you need>>
+        - At the very end of every reply add one line exactly like this:
+        <<next: first idea | second idea | third idea>>
+        These are 2 or 3 things \(me) will most likely want next, under 6 words each, written the way \(me) would text them to you.
+        """
     }
 
     /// `<<needs you: why>>` — the agent is stuck until the user answers. Returns the text without it, and the

@@ -7,9 +7,22 @@ enum Flavor {
     #if CCHAT_PERSONAL
     static let personal = true
     static let dataFolder = "cMessage"
+    #elseif CCHAT_SOLO
+    static let personal = false
+    static let dataFolder = Solo.dataFolder
     #else
     static let personal = false
     static let dataFolder = "cChat"
+    #endif
+
+    /// A one-contact build (CCHAT_SOLO): the whole app is a single chat with one agent locked to one folder.
+    /// Its name, folder and look come from a `Solo` file that only that build compiles (kept outside git).
+    #if CCHAT_SOLO
+    static let solo = true
+    static let appName = Solo.appName
+    #else
+    static let solo = false
+    static let appName = "cChat"
     #endif
 }
 
@@ -22,6 +35,9 @@ enum Prefs {
     static var userName: String {
         get {
             if let n = d.string(forKey: "userName")?.trimmingCharacters(in: .whitespaces), !n.isEmpty { return n }
+            #if CCHAT_SOLO
+            return Solo.userName
+            #endif
             #if os(macOS)
             if let first = NSFullUserName().split(separator: " ").first { return String(first) }
             #endif
@@ -76,7 +92,7 @@ enum Prefs {
 
     /// The welcome screen has been finished. A personal build never shows it.
     static var setupDone: Bool {
-        get { Flavor.personal || d.bool(forKey: "setupDone") }
+        get { Flavor.personal || Flavor.solo || d.bool(forKey: "setupDone") }
         set { d.set(newValue, forKey: "setupDone") }
     }
 }

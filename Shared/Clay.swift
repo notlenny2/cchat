@@ -36,6 +36,17 @@ enum Clay {
     static let ink        = dyn((0.129, 0.212, 0.294), (0.918, 0.953, 0.984))   // text on ice
     static let inkSoft    = dyn((0.376, 0.471, 0.557), (0.627, 0.706, 0.780))
     static let shadow     = dyn((0.157, 0.302, 0.439), (0.0, 0.0, 0.0))
+    #elseif CCHAT_SOLO
+    // A one-contact build brings its own colors (its `Solo` file), each a light and a dark twin.
+    static let canvas     = dyn(Solo.canvas.0, Solo.canvas.1)
+    static let sidebar    = dyn(Solo.sidebar.0, Solo.sidebar.1)
+    static let cream      = dyn(Solo.cream.0, Solo.cream.1)
+    static let peach      = dyn(Solo.peach.0, Solo.peach.1)
+    static let terracotta = dyn(Solo.accent.0, Solo.accent.1)
+    static let plum       = dyn((0.604, 0.463, 0.769), (0.557, 0.427, 0.722))
+    static let ink        = dyn(Solo.ink.0, Solo.ink.1)
+    static let inkSoft    = dyn(Solo.inkSoft.0, Solo.inkSoft.1)
+    static let shadow     = dyn(Solo.shadow.0, Solo.shadow.1)
     #else
     static let canvas     = dyn((0.953, 0.925, 0.894), (0.145, 0.118, 0.102))   // the table the clay sits on
     static let sidebar    = dyn((0.965, 0.878, 0.816), (0.180, 0.141, 0.118))   // peach slab
