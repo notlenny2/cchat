@@ -25,6 +25,11 @@ final class Store: ObservableObject {
     /// and extra folders its agent may read.
     var soloNotes = ""
     var extraReadDirs: [String] = []
+    /// A build's own extras for particular contacts: more house rules, more folders it may read, and contacts that
+    /// must never get Full Access (their folder's own settings are their safety layer).
+    var contactNotes: ((Contact) -> String?)?
+    var contactDirs: ((Contact) -> [String])?
+    var neverFullAccess: ((Contact) -> Bool)?
     /// Goes up on every change, so the iPhone/iPad app can ask "anything new since N?".
     private(set) var version = 0
 
@@ -775,7 +780,9 @@ final class Store: ObservableObject {
     }
 
     private func runTurn(_ agentId: UUID, in convId: UUID) async {
-        guard let i = index(of: convId), let agent = contact(agentId) else { return }
+        guard let i = index(of: convId), var agent = contact(agentId) else { return }
+        if neverFullAccess?(agent) == true { agent.fullAccess = false }
+        let extraDirs = [Store.attachmentsDir.path] + extraReadDirs + (contactDirs?(agent) ?? [])
         let conv = conversations[i]
         let key = agentId.uuidString
         let seen = min(conv.seenCount[key] ?? 0, conv.messages.count)
@@ -889,14 +896,14 @@ final class Store: ObservableObject {
             } else {
                 result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                    systemPrompt: systemPrompt(for: agent, in: conv),
-                                                   model: conv.model ?? agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path] + extraReadDirs, onStep: onStep)
+                                                   model: conv.model ?? agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: extraDirs, onStep: onStep)
                 // A resume can fail if the old session was cleaned up. Start fresh once rather than dying.
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("conversation") {
                     Log.info("resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
                                                        systemPrompt: systemPrompt(for: agent, in: conv),
-                                                       model: conv.model ?? agent.model, fullAccess: agent.fullAccess, extraDirs: [Store.attachmentsDir.path] + extraReadDirs, onStep: onStep)
+                                                       model: conv.model ?? agent.model, fullAccess: agent.fullAccess, extraDirs: extraDirs, onStep: onStep)
                 }
             }
             // Let the last few streamed steps land before they're filed with the reply.
@@ -1096,6 +1103,7 @@ final class Store: ObservableObject {
             Be specific to the projects in the room; a concrete idea beats a general one.
             """
         }
+        if let extra = contactNotes?(agent), !extra.isEmpty { s += "\n\n" + extra }
         return s
     }
 

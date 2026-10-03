@@ -43,6 +43,9 @@ struct CMessageApp: App {
                     #if CCHAT_SOLO
                     SoloExtras.attach(store)     // the one-contact build's own extras (e.g. a voice)
                     #endif
+                    #if CCHAT_PERSONAL
+                    PersonalExtras.attach(store)     // the owner's own contacts and extras, kept out of the public repo
+                    #endif
                     // Self-install rebuilds from the personal build's own source folder, so it's personal-build only.
                     if Flavor.personal { SelfUpdate.start(store) }
                 }
