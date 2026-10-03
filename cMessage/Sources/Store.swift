@@ -21,6 +21,10 @@ final class Store: ObservableObject {
     var onAgentReply: ((UUID, String, String) -> Void)?
     /// The user just sent something (not another agent on their behalf).
     var onUserSend: ((UUID) -> Void)?
+    /// The one-contact build's own extra house rules (keep them the same every turn so the prompt cache holds),
+    /// and extra folders its agent may read.
+    var soloNotes = ""
+    var extraReadDirs: [String] = []
     /// Goes up on every change, so the iPhone/iPad app can ask "anything new since N?".
     private(set) var version = 0
 
@@ -885,14 +889,14 @@ final class Store: ObservableObject {
             } else {
                 result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                    systemPrompt: systemPrompt(for: agent, in: conv),
-                                                   model: conv.model ?? agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path], onStep: onStep)
+                                                   model: conv.model ?? agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: [Store.attachmentsDir.path] + extraReadDirs, onStep: onStep)
                 // A resume can fail if the old session was cleaned up. Start fresh once rather than dying.
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("conversation") {
                     Log.info("resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
                                                        systemPrompt: systemPrompt(for: agent, in: conv),
-                                                       model: conv.model ?? agent.model, fullAccess: agent.fullAccess, extraDirs: [Store.attachmentsDir.path], onStep: onStep)
+                                                       model: conv.model ?? agent.model, fullAccess: agent.fullAccess, extraDirs: [Store.attachmentsDir.path] + extraReadDirs, onStep: onStep)
                 }
             }
             // Let the last few streamed steps land before they're filed with the reply.
@@ -1114,7 +1118,7 @@ final class Store: ObservableObject {
         - At the very end of every reply add one line exactly like this:
         <<next: first idea | second idea | third idea>>
         These are 2 or 3 things \(me) will most likely want next, under 6 words each, written the way \(me) would text them to you.
-        """
+        """ + (soloNotes.isEmpty ? "" : "\n\n" + soloNotes)
     }
 
     /// `<<needs you: why>>` — the agent is stuck until the user answers. Returns the text without it, and the
