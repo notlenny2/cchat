@@ -29,6 +29,8 @@ final class Traffic {
     private var queue: [String: [Waiter]] = [:]
     private var pollers: [String: Task<Void, Never>] = [:]
     static let staleAfter: TimeInterval = 45 * 60
+    /// A folder another app also works in can keep its lock file somewhere both apps look (nil = cChat's own).
+    var lockDir: ((String) -> URL?)?
 
     /// Who is working in this folder right now (nil = free), for the "waiting for…" line.
     func busyLabel(_ path: String) -> String? { holder[path]?.label ?? lockFileLabel(path) }
@@ -106,7 +108,7 @@ final class Traffic {
 
     private func lockURL(_ path: String) -> URL {
         let safe = path.replacingOccurrences(of: "/", with: "_")
-        return Self.dir.appendingPathComponent("\(safe.suffix(120)).json")
+        return (lockDir?(path) ?? Self.dir).appendingPathComponent("\(safe.suffix(120)).json")
     }
 
     /// A lock from ANOTHER cChat process, if it's still valid. Our own locks and dead ones don't count.

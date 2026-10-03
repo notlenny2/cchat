@@ -30,6 +30,9 @@ final class Store: ObservableObject {
     var contactNotes: ((Contact) -> String?)?
     var contactDirs: ((Contact) -> [String])?
     var neverFullAccess: ((Contact) -> Bool)?
+    /// A 1:1 Claude chat whose memory is shared with another app: a small file holding the session id both use.
+    /// (Pair it with `Traffic.lockDir` so the two apps never run a turn in it at the same time.)
+    var sharedMemory: ((Contact, Conversation) -> URL?)?
     /// Goes up on every change, so the iPhone/iPad app can ask "anything new since N?".
     private(set) var version = 0
 
@@ -853,8 +856,9 @@ final class Store: ObservableObject {
             }
         }
 
-        var session = conv.sessions[key]
-        let fork = session != nil && (conv.forkNext ?? []).contains(key) && conv.isClaude
+        let shared = conv.isClaude && !conv.isGroup ? sharedMemory?(agent, conv) : nil
+        var session = shared.flatMap(Self.readShared) ?? conv.sessions[key]
+        let fork = shared == nil && session != nil && (conv.forkNext ?? []).contains(key) && conv.isClaude
         do {
             var result: ClaudeResult
             if conv.usesGrok {
@@ -913,6 +917,7 @@ final class Store: ObservableObject {
             if let sid = result.sessionId {
                 conversations[j].sessions[key] = sid
                 conversations[j].forkNext?.removeAll { $0 == key }
+                if let shared { Self.writeShared(sid, to: shared) }
             }
             conversations[j].seenCount[key] = endIndex
 
@@ -963,7 +968,7 @@ final class Store: ObservableObject {
             // Still holding the project folder, so nothing else runs in it while memory is condensed.
             if conv.isClaude, !result.isError, let sid = result.sessionId {
                 await condenseIfNeeded(agent, session: sid, window: result.contextWindow, in: convId,
-                                       model: conv.model ?? agent.model)
+                                       model: conv.model ?? agent.model, shared: shared)
             }
         } catch is CancellationError {
             Log.info("turn cancelled for \(agent.name)")
@@ -987,6 +992,19 @@ final class Store: ObservableObject {
         if let at = steps.lastIndex(where: { $0.kind != .info }), steps[at].kind == .note,
            reply.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix(steps[at].text.suffix(200)) { steps.remove(at: at) }
         return steps.isEmpty ? nil : steps
+    }
+
+    static func readShared(_ url: URL) -> String? {
+        guard let s = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+              !s.isEmpty, s.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) else { return nil }
+        return s
+    }
+
+    static func writeShared(_ sid: String, to url: URL) {
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+        try? Data(sid.utf8).write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     /// No agent has answered the user's latest message yet.
@@ -1019,7 +1037,7 @@ final class Store: ObservableObject {
     /// After a reply lands, condense this agent's memory in this chat if it has grown big (see Condense).
     /// Groups too: each member has its own memory per chat and is checked after each of its turns.
     /// Codex tidies its own threads, so only Claude sessions are condensed.
-    private func condenseIfNeeded(_ agent: Contact, session: String, window: Int?, in convId: UUID, model: String) async {
+    private func condenseIfNeeded(_ agent: Contact, session: String, window: Int?, in convId: UUID, model: String, shared: URL? = nil) async {
         let size = await Task.detached(priority: .utility) { Condense.size(session: session) }.value
         let limit = Condense.limit(window: window)
         guard let size, size > limit, !Task.isCancelled else { return }
@@ -1033,7 +1051,10 @@ final class Store: ObservableObject {
             guard !r.isError else { Log.error("condense failed for \(agent.name): \(r.text.prefix(300))"); return }
             Log.info("condensed \(displayName(agent)) (was \(size / 1000)k)")
             guard let j = index(of: convId) else { return }
-            if let sid = r.sessionId, sid != session { conversations[j].sessions[agent.id.uuidString] = sid }
+            if let sid = r.sessionId, sid != session {
+                conversations[j].sessions[agent.id.uuidString] = sid
+                if let shared { Self.writeShared(sid, to: shared) }
+            }
             conversations[j].messages.append(Message(senderId: nil,
                 text: "Tidied up \(displayName(agent))'s memory so it stays quick. It still knows what you've been working on.",
                 kind: .system))
