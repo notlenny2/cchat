@@ -558,8 +558,14 @@ function select(id) {
   const cv = conv(id);
   if (cv) cv.unread = false;
   render();
-  setTimeout(() => { const t = $('#transcript'); t.scrollTop = t.scrollHeight; $('#input').focus(); });
+  // Opening a chat always lands on the newest message, and stays there while its pictures load in.
+  stickUntil = Date.now() + 1500;
+  setTimeout(() => { toBottom(); $('#input').focus(); });
 }
+
+let stickUntil = 0;
+function toBottom() { const t = $('#transcript'); t.scrollTop = t.scrollHeight; }
+function settle() { if (Date.now() < stickUntil) toBottom(); }
 
 function render() {
   renderList();
@@ -655,6 +661,7 @@ function renderTranscript(cv) {
       const video = /\.(mp4|mov|m4v|webm)$/i.test(p);
       const v = el(video ? 'video' : 'img', 'media');
       v.src = T.core.convertFileSrc(p);
+      if (video) v.onloadedmetadata = settle; else v.onload = settle;
       if (video) { v.controls = true; v.preload = 'metadata'; } else v.ondblclick = () => invoke('open_media', { path: p });
       return v;
     });

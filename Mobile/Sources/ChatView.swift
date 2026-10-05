@@ -103,10 +103,19 @@ struct ChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
             .jumpToLatest($scrolledUp) { toBottom(proxy) }
+            .onAppear { settleAtBottom(proxy) }
             .onChange(of: conv.messages.count) { _, _ in toBottom(proxy) }
             .onChange(of: client.typing(in: convId)) { _, _ in toBottom(proxy) }
             // The chips appearing under a reply shrink the transcript, which left the end of a reply cut off.
             .onChange(of: conv.suggestions) { _, _ in toBottom(proxy) }
+        }
+    }
+
+    /// Opening a chat lands on the newest message. The list guesses the height of rows it hasn't drawn and pictures
+    /// arrive late, which used to leave it short, so it pins to the end a few more times while that settles.
+    private func settleAtBottom(_ proxy: ScrollViewProxy) {
+        for delay in [0, 0.05, 0.2, 0.5, 1.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
 
