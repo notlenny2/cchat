@@ -117,7 +117,13 @@ final class WaterCooler {
         }
         guard !Task.isCancelled else { return }
         let closer = people.first { $0.name.localizedCaseInsensitiveContains("futurist") } ?? people[0]
+        let mark = store.conversations.first { $0.id == convId }?.messages.count ?? 0
         await say("@\(store.displayName(closer)): that's tonight. Wrap it up for \(Prefs.userName): the three to five best ideas from tonight, each with which project it's for and one line on why. Keep it short.", in: convId, store: store)
+        // The wrap-up goes on the running ideas page (Ideas button in this chat).
+        if let msgs = store.conversations.first(where: { $0.id == convId })?.messages, mark < msgs.count {
+            let wrap = msgs[mark...].filter { $0.senderId == closer.id && $0.kind == .normal }.map(\.text).joined(separator: "\n\n")
+            await CoolerIdeas.record(wrapUp: wrap, night: Date(timeIntervalSinceNow: -6 * 3600))
+        }
         Log.info("water cooler: done, \(round) rounds, spent \(Int((spent() * 100).rounded())) points of the week, \(names.count) people")
     }
 

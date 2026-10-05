@@ -131,6 +131,11 @@ struct ChatView: View {
         }
         .overlay(alignment: .trailing) {
             HStack(spacing: 12) {
+                if conv.isCooler {
+                    Button { CoolerIdeas.open() } label: { Label("Ideas", systemImage: "lightbulb") }
+                        .buttonStyle(.borderless).foregroundStyle(Clay.terracotta)
+                        .help("Every idea the Water Cooler has picked, sorted by app")
+                }
                 Button { showWork.toggle() } label: {
                     Image(systemName: "apple.terminal").foregroundStyle(showWork ? Clay.terracotta : .secondary)
                 }
