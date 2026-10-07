@@ -947,6 +947,7 @@ final class Store: ObservableObject {
                 if let needs, !conv.isCooler { conversations[j].needsYou = needs.isEmpty ? "\(displayName(agent)) is waiting on you" : needs }
                 let said = pass ? nil : (body.isEmpty ? (media.isEmpty ? nil : "Sent you a picture.") : body)
                 if !conv.isCooler, let text = said ?? conversations[j].needsYou.flatMap({ needs == nil ? nil : $0 }) {
+                    ReplyChime.play()
                     let who = displayName(agent)
                     let group = conversations[j].isGroup
                     onAgentReply?(convId, group ? title(for: conversations[j]) : who, group ? "\(who): \(text)" : text)
@@ -1305,5 +1306,17 @@ final class Store: ObservableObject {
         return spaced.split(separator: " ").map { w in
             w.first!.isUppercase ? String(w) : w.prefix(1).uppercased() + w.dropFirst()
         }.joined(separator: " ")
+    }
+}
+
+
+/// cChat's own "an agent answered" sound, so a reply doesn't sound like a regular text.
+/// The one-contact build speaks its replies instead, so it stays quiet there.
+enum ReplyChime {
+    private static let sound = Bundle.main.url(forResource: "cchat-received", withExtension: "caf").flatMap { NSSound(contentsOf: $0, byReference: true) }
+    static func play() {
+        guard !Flavor.solo, UserDefaults.standard.object(forKey: "replySound") as? Bool ?? true, let sound else { return }
+        sound.stop()
+        sound.play()
     }
 }
