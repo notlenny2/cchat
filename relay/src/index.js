@@ -130,7 +130,7 @@ export class Mailbox {
     const title = String(n.title || "").slice(0, 80);
     const body = String(n.body || "").slice(0, 240);
     if (!body) return text(400, "empty");
-    const payload = { aps: { alert: { title, body }, sound: "default", "thread-id": UUID.test(n.conv || "") ? n.conv : "cchat" } };
+    const payload = { aps: { alert: { title, body }, sound: "cchat-received.caf", "thread-id": UUID.test(n.conv || "") ? n.conv : "cchat" } };
     if (UUID.test(n.conv || "")) payload.conv = n.conv;
     if (Number.isInteger(n.badge) && n.badge >= 0 && n.badge < 10000) payload.aps.badge = n.badge;
     const res = await apns(this.env, n.device, n.topic, payload);
