@@ -52,9 +52,25 @@ struct ChatView: View {
                             }
                             Divider()
                         }
-                        ForEach(client.models(for: conv.engine ?? .claude)) { m in
-                            Button { client.setModel(convId, m.id) } label: {
-                                if (conv.model ?? "") == m.id { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
+                        Section("Model") {
+                            ForEach(client.models(for: conv.engine ?? .claude)) { m in
+                                Button { client.setModel(convId, m.id) } label: {
+                                    if (conv.model ?? "") == m.id { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
+                                }
+                            }
+                        }
+                        if ModelCatalog.canPlan(conv.engine ?? .claude) {
+                            Menu {
+                                ForEach(ModelCatalog.efforts) { m in
+                                    Button { client.setEffort(convId, m.id) } label: {
+                                        if (conv.effort ?? "") == m.id { Label(m.label, systemImage: "checkmark") } else { Text(m.label) }
+                                    }
+                                }
+                            } label: {
+                                Label("Thinking: \(ModelCatalog.label(conv.effort, in: ModelCatalog.efforts) ?? "Auto")", systemImage: "brain")
+                            }
+                            Toggle(isOn: Binding(get: { conv.isPlanning }, set: { client.setPlanning(convId, on: $0) })) {
+                                Label("Plan First", systemImage: "map")
                             }
                         }
                     } label: { Label(client.modelSummary(conv), systemImage: "cpu") }

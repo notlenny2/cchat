@@ -220,6 +220,8 @@ final class RemoteClient: ObservableObject {
     func setChatter(_ conv: UUID, on: Bool) { fire(RPCRequest(op: .chatter, conv: conv, wait: on)) }
 
     func setModel(_ conv: UUID, _ model: String) { fire(RPCRequest(op: .setModel, conv: conv, model: model)) }
+    func setEffort(_ conv: UUID, _ effort: String) { fire(RPCRequest(op: .effort, conv: conv, model: effort)) }
+    func setPlanning(_ conv: UUID, on: Bool) { fire(RPCRequest(op: .plan, conv: conv, wait: on)) }
 
     func models(for engine: Engine) -> [ModelOption] {
         snapshot?.models?[engine.rawValue] ?? (engine == .claude ? ModelCatalog.claude : [ModelOption(id: "", label: "Default", note: "")])
@@ -234,7 +236,9 @@ final class RemoteClient: ObservableObject {
 
     func modelSummary(_ c: Conversation) -> String {
         let e = c.engine ?? .claude
+        let thinking = ModelCatalog.canPlan(e) ? ModelCatalog.label(c.effort, in: ModelCatalog.efforts) : nil
         return e.label + (ModelCatalog.label(c.model, in: models(for: e)).map { " · \($0)" } ?? "")
+            + (thinking.map { " · \($0)" } ?? "") + (c.isPlanning ? " · Plan first" : "")
     }
 
     private func fire(_ req: RPCRequest) {

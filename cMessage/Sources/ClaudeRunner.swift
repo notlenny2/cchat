@@ -84,6 +84,7 @@ enum ClaudeRunner {
 
     static func run(prompt: String, cwd: String, sessionId: String?, systemPrompt: String,
                     model: String, fullAccess: Bool, fork: Bool = false, extraDirs: [String] = [],
+                    effort: String? = nil, planning: Bool = false,
                     onStep: (@Sendable (WorkStep) -> Void)? = nil) async throws -> ClaudeResult {
         guard let claude = await waitFor("claude", claudeSpots) else { throw RunnerError.claudeNotFound }
         var isDir: ObjCBool = false
@@ -91,10 +92,12 @@ enum ClaudeRunner {
             throw RunnerError.folderMissing(cwd)
         }
 
+        // Plan first wins over Full Access: the agent may look around but change nothing.
         var args = ["-p", "--output-format", "stream-json", "--verbose",
                     "--append-system-prompt", systemPrompt,
-                    "--permission-mode", fullAccess ? "bypassPermissions" : "acceptEdits"]
+                    "--permission-mode", planning ? "plan" : fullAccess ? "bypassPermissions" : "acceptEdits"]
         if let sessionId { args += ["--resume", sessionId] + (fork ? ["--fork-session"] : []) }
+        if let effort, !effort.isEmpty { args += ["--effort", effort] }
         // "Default" = newest Opus. Left to itself Claude Code picks an older one; the alias always tracks the latest.
         args += ["--model", model.isEmpty ? ModelCatalog.claudeDefault : model]
         // Lets the agent open pictures the user dragged in, which live outside the project folder.
@@ -125,7 +128,7 @@ enum ClaudeRunner {
         }
         stderr.fileHandleForReading.readabilityHandler = { errBuf.append($0.availableData) }
 
-        Log.info("run \(URL(fileURLWithPath: cwd).lastPathComponent) resume=\(sessionId ?? "new") model=\(model.isEmpty ? "default" : model) full=\(fullAccess)")
+        Log.info("run \(URL(fileURLWithPath: cwd).lastPathComponent) resume=\(sessionId ?? "new") model=\(model.isEmpty ? "default" : model) effort=\(effort ?? "auto") plan=\(planning) full=\(fullAccess)")
 
         let status: Int32 = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Int32, Error>) in
@@ -250,6 +253,7 @@ enum ClaudeRunner {
     /// house rules ride at the top of the message, clearly marked as coming from the app.
     static func runCodex(prompt: String, cwd: String, threadId: String?, instructions: String,
                          fullAccess: Bool, images: [String], model: String? = nil,
+                         effort: String? = nil, planning: Bool = false,
                          onStep: (@Sendable (WorkStep) -> Void)? = nil) async throws -> ClaudeResult {
         guard let codex = await waitFor("codex", codexSpots) else { throw RunnerError.failed("Couldn't find Codex on this Mac.") }
         var isDir: ObjCBool = false
@@ -259,8 +263,12 @@ enum ClaudeRunner {
         var args = ["exec"]
         if let threadId { args += ["resume", threadId] }
         args += ["--json", "--skip-git-repo-check"]
-        args += fullAccess ? ["--dangerously-bypass-approvals-and-sandbox"] : ["-c", "sandbox_mode=\"workspace-write\""]
+        // Plan first = read-only sandbox, whatever Full Access says.
+        args += planning ? ["-c", "sandbox_mode=\"read-only\""]
+            : fullAccess ? ["--dangerously-bypass-approvals-and-sandbox"] : ["-c", "sandbox_mode=\"workspace-write\""]
         if let model, !model.isEmpty { args += ["-m", model] }
+        // Codex tops out at xhigh.
+        if let effort, !effort.isEmpty { args += ["-c", "model_reasoning_effort=\"\(effort == "max" ? "xhigh" : effort)\""] }
         for img in images { args += ["-i", img] }
         args.append("-")
         let full = "[cChat app instructions, not from \(Prefs.userName)]\n\(instructions)\n[end of app instructions]\n\n\(prompt)"

@@ -381,7 +381,28 @@ final class Store: ObservableObject {
     func modelSummary(_ conv: Conversation) -> String {
         let e = conv.engine ?? .claude
         let id = conv.model ?? (e == .claude && !conv.isGroup ? contact(conv.participantIds.first)?.model : nil)
-        return e.label + (ModelCatalog.label(id, in: models(for: e)).map { " · \($0)" } ?? "")
+        let thinking = ModelCatalog.canPlan(e) ? ModelCatalog.label(conv.effort, in: ModelCatalog.efforts) : nil
+        return e.label + (ModelCatalog.label(id, in: models(for: e)).map { " · \($0)" } ?? "") + (thinking.map { " · \($0)" } ?? "")
+    }
+
+    /// The chip a plan ends with. Sending it (or anything containing it) turns Plan first off.
+    static let goAhead = "Go ahead with the plan"
+
+    func setEffort(_ convId: UUID, _ effort: String?) {
+        guard let i = index(of: convId) else { return }
+        conversations[i].effort = (effort?.isEmpty ?? true) ? nil : effort
+        let label = ModelCatalog.label(conversations[i].effort, in: ModelCatalog.efforts) ?? "Auto"
+        conversations[i].messages.append(Message(senderId: nil, text: "Thinking: \(label).", kind: .system))
+        save()
+    }
+
+    func setPlanning(_ convId: UUID, on: Bool) {
+        guard let i = index(of: convId), conversations[i].isPlanning != on else { return }
+        conversations[i].planning = on ? true : nil
+        conversations[i].messages.append(Message(senderId: nil, text: on
+            ? "Plan first is on. Agents will look around and tell you the plan, but won't change anything until you say go."
+            : "Plan first is off. Agents can make changes again.", kind: .system))
+        save()
     }
 
     func setModel(_ convId: UUID, _ model: String?) {
@@ -588,6 +609,11 @@ final class Store: ObservableObject {
         m.from = from
         conversations[i].messages.append(m)
         if from == nil { conversations[i].needsYou = nil; onUserSend?(convId) }
+        // Saying go on a plan turns Plan first off for this message onward, so the agent can do it.
+        if from == nil, conversations[i].isPlanning, text.range(of: Store.goAhead, options: .caseInsensitive) != nil {
+            conversations[i].planning = nil
+            conversations[i].messages.append(Message(senderId: nil, text: "Plan first is off. Going ahead.", kind: .system))
+        }
         passed[convId] = nil
         if from != nil && selectedId != convId { conversations[i].unread = true }
         conversations[i].suggestions = []
@@ -859,6 +885,25 @@ final class Store: ObservableObject {
         let shared = conv.isClaude && !conv.isGroup ? sharedMemory?(agent, conv) : nil
         var session = shared.flatMap(Self.readShared) ?? conv.sessions[key]
         let fork = shared == nil && session != nil && (conv.forkNext ?? []).contains(key) && conv.isClaude
+
+        // Model, thinking and Plan first for this turn. "Smart" asks Haiku to pick per message.
+        let planning = conv.isPlanning && ModelCatalog.canPlan(conv.engine ?? .claude)
+        var model = conv.model ?? agent.model
+        var effort = conv.effort
+        var picked: String?
+        if conv.isClaude, model == ModelCatalog.smart {
+            let before = conv.messages[..<seen].filter { $0.kind == .normal && !$0.text.isEmpty }.suffix(3)
+                .map { m in "\(m.senderId.flatMap { contact($0) }.map(displayName) ?? Prefs.userName): \(m.text.prefix(400))" }
+                .joined(separator: "\n")
+            let last = conv.messages.last { $0.senderId == agentId && $0.picked != nil }?.picked
+            var pick = await SmartModel.pick(message: prompt, recent: before, memory: session.flatMap(Condense.size),
+                                             last: last, planning: planning)
+            if Task.isCancelled { if typing[convId] == agentId { typing[convId] = nil }; return }
+            model = pick.model
+            if let effort, !effort.isEmpty { pick.effort = effort } else { effort = pick.effort }
+            picked = pick.label
+            onStep(WorkStep(kind: .info, text: "Smart pick: \(pick.label)\(pick.why.isEmpty ? "" : " (\(pick.why))")"))
+        }
         do {
             var result: ClaudeResult
             if conv.usesGrok {
@@ -889,25 +934,29 @@ final class Store: ObservableObject {
                 let images = fresh.flatMap { $0.attachments ?? [] }.filter { !Media.isVideo($0) }
                 result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: session,
                                                          instructions: systemPrompt(for: agent, in: conv),
-                                                         fullAccess: agent.fullAccess, images: images, model: conv.model, onStep: onStep)
+                                                         fullAccess: agent.fullAccess, images: images, model: conv.model,
+                                                         effort: effort, planning: planning, onStep: onStep)
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("thread") {
                     Log.info("codex resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: nil,
                                                              instructions: systemPrompt(for: agent, in: conv),
-                                                             fullAccess: agent.fullAccess, images: images, model: conv.model, onStep: onStep)
+                                                             fullAccess: agent.fullAccess, images: images, model: conv.model,
+                                                             effort: effort, planning: planning, onStep: onStep)
                 }
             } else {
                 result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                    systemPrompt: systemPrompt(for: agent, in: conv),
-                                                   model: conv.model ?? agent.model, fullAccess: agent.fullAccess, fork: fork, extraDirs: extraDirs, onStep: onStep)
+                                                   model: model, fullAccess: agent.fullAccess, fork: fork, extraDirs: extraDirs,
+                                                   effort: effort, planning: planning, onStep: onStep)
                 // A resume can fail if the old session was cleaned up. Start fresh once rather than dying.
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("conversation") {
                     Log.info("resume failed for \(agent.name), starting fresh")
                     session = nil
                     result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
                                                        systemPrompt: systemPrompt(for: agent, in: conv),
-                                                       model: conv.model ?? agent.model, fullAccess: agent.fullAccess, extraDirs: extraDirs, onStep: onStep)
+                                                       model: model, fullAccess: agent.fullAccess, extraDirs: extraDirs,
+                                                       effort: effort, planning: planning, onStep: onStep)
                 }
             }
             // Let the last few streamed steps land before they're filed with the reply.
@@ -924,6 +973,7 @@ final class Store: ObservableObject {
             if result.isError {
                 var m = Message(senderId: agentId, text: result.text.isEmpty ? "Something went wrong on my end." : result.text, kind: .error)
                 m.work = steps
+                m.picked = picked
                 conversations[j].messages.append(m)
             } else {
                 let (parsed, next) = Self.parse(result.text)
@@ -939,6 +989,7 @@ final class Store: ObservableObject {
                 if !pass && (!body.isEmpty || !media.isEmpty) {
                     var m = Message(senderId: agentId, text: body, attachments: media.isEmpty ? nil : media)
                     m.work = steps
+                    m.picked = picked
                     conversations[j].messages.append(m)
                     if !next.isEmpty { conversations[j].suggestions = next }
                     if selectedId != convId { conversations[j].unread = true }
@@ -969,7 +1020,7 @@ final class Store: ObservableObject {
             // Still holding the project folder, so nothing else runs in it while memory is condensed.
             if conv.isClaude, !result.isError, let sid = result.sessionId {
                 await condenseIfNeeded(agent, session: sid, window: result.contextWindow, in: convId,
-                                       model: conv.model ?? agent.model, shared: shared)
+                                       model: model, shared: shared)
             }
         } catch is CancellationError {
             Log.info("turn cancelled for \(agent.name)")
@@ -1123,6 +1174,15 @@ final class Store: ObservableObject {
             Talk only. You may read your project's files for context, but don't edit, build, commit, install or run
             anything, and don't open chats or flag \(me). Messages from "Water Cooler" are the host steering the talk.
             Be specific to the projects in the room; a concrete idea beats a general one.
+            """
+        }
+        if conv.isPlanning && ModelCatalog.canPlan(conv.engine ?? .claude) {
+            s += """
+
+            Plan first is ON in this chat. Look around and think it through (read files, search), but change nothing:
+            no edits, builds, installs, commits or commands that change things. Reply with the plan in plain English:
+            what you'd do, in what order, what could go wrong, and anything you need from \(me). Keep it short and
+            readable, a few short lines, not a document. Make the first next idea exactly "\(Store.goAhead)".
             """
         }
         if let extra = contactNotes?(agent), !extra.isEmpty { s += "\n\n" + extra }

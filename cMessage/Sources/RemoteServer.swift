@@ -329,6 +329,10 @@ final class RemoteServer: ObservableObject {
             if let c = req.conv { store.setChatter(c, on: req.wait ?? true) } else { res.ok = false }
         case .setModel:
             if let c = req.conv { store.setModel(c, req.model) } else { res.ok = false }
+        case .effort:
+            if let c = req.conv { store.setEffort(c, req.model) } else { res.ok = false }
+        case .plan:
+            if let c = req.conv { store.setPlanning(c, on: req.wait ?? true) } else { res.ok = false }
         case .media:
             // Only files inside cChat's own attachments folder, looked up by bare name.
             guard let name = req.text, !name.contains("/"), !name.hasPrefix(".") else { res.ok = false; break }

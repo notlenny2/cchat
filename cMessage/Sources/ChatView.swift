@@ -145,21 +145,47 @@ struct ChatView: View {
                     Button("Stop") { store.stop(convId) }
                         .buttonStyle(.borderless).foregroundStyle(.red)
                 }
+                if conv.isPlanning {
+                    Button { store.setPlanning(convId, on: false) } label: {
+                        Label("Plan first", systemImage: "map").zfont(.caption)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Capsule().fill(Clay.terracotta.opacity(0.18)))
+                    }
+                    .buttonStyle(.borderless).foregroundStyle(Clay.terracotta)
+                    .help("Agents only plan in this chat, they don't change anything. Click to let them work.")
+                }
                 Menu {
                     let e = conv.engine ?? .claude
-                    ForEach(store.models(for: e)) { m in
-                        Button {
-                            store.setModel(convId, m.id)
-                        } label: {
-                            if (conv.model ?? "") == m.id { Label("\(m.label) · \(m.note)", systemImage: "checkmark") }
-                            else { Text("\(m.label) · \(m.note)") }
+                    Section("Model") {
+                        ForEach(store.models(for: e)) { m in
+                            Button {
+                                store.setModel(convId, m.id)
+                            } label: {
+                                if (conv.model ?? "") == m.id { Label("\(m.label) · \(m.note)", systemImage: "checkmark") }
+                                else { Text("\(m.label) · \(m.note)") }
+                            }
                         }
+                    }
+                    if ModelCatalog.canPlan(e) {
+                        Section("Thinking") {
+                            ForEach(ModelCatalog.efforts) { m in
+                                Button {
+                                    store.setEffort(convId, m.id)
+                                } label: {
+                                    if (conv.effort ?? "") == m.id { Label("\(m.label) · \(m.note)", systemImage: "checkmark") }
+                                    else { Text("\(m.label) · \(m.note)") }
+                                }
+                            }
+                        }
+                        Divider()
+                        Toggle("Plan First (look, don't change anything)", isOn: Binding(
+                            get: { conv.isPlanning }, set: { store.setPlanning(convId, on: $0) }))
                     }
                 } label: {
                     Label(store.modelSummary(conv), systemImage: "cpu").zfont(.caption)
                 }
                 .menuStyle(.borderlessButton).fixedSize()
-                .help("Pick which model answers in this chat")
+                .help("Pick the model, how hard it thinks, and Plan First")
             }
             .padding(.trailing, 16)
         }
@@ -372,6 +398,10 @@ struct MessageRow: View {
                     }
                     .frame(maxWidth: 560 * zoom, alignment: mine ? .trailing : .leading)
                     if !mine { Spacer(minLength: 80) }
+                }
+                if !mine, let picked = message.picked {
+                    Text(picked).zfont(.caption2).foregroundStyle(.secondary)
+                        .padding(.leading, isGroup ? 48 : 12).help("Smart picked this model and thinking for this reply")
                 }
                 if showWork, !mine, let steps = message.work, !steps.isEmpty {
                     WorkDisclosure(steps: steps)

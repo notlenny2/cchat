@@ -44,6 +44,8 @@ struct Message: Identifiable, Codable, Hashable {
     var from: String? = nil
     /// What the agent did on its way to this reply (tools it ran, their output), for View > Show the Work.
     var work: [WorkStep]? = nil
+    /// Which model and thinking level Smart picked for this reply ("Sonnet · light thinking"), shown under it.
+    var picked: String? = nil
     var isFromUser: Bool { senderId == nil && from == nil }
 }
 
@@ -100,8 +102,11 @@ struct ModelOption: Codable, Hashable, Identifiable {
 enum ModelCatalog {
     /// What a Claude chat on "Default" runs: the alias, so it moves to each new Opus by itself.
     static let claudeDefault = "opus"
+    /// "Smart": a quick Haiku call reads each message and picks the model and how hard it thinks (SmartModel).
+    static let smart = "smart"
     static let claude: [ModelOption] = [
         ModelOption(id: "", label: "Default", note: "The newest Opus"),
+        ModelOption(id: smart, label: "Smart", note: "Picks the model and thinking for each message"),
         ModelOption(id: "fable", label: "Fable", note: "Most capable"),
         ModelOption(id: "opus", label: "Opus", note: "Very capable"),
         ModelOption(id: "sonnet", label: "Sonnet", note: "Fast and smart"),
@@ -114,6 +119,17 @@ enum ModelCatalog {
         ModelOption(id: "flash", label: "Flash", note: "Fast and smart"),
         ModelOption(id: "flash-lite", label: "Flash-Lite", note: "Quickest, cheapest"),
     ]
+    /// How hard the agent thinks (Claude Code `--effort`, Codex `model_reasoning_effort`). "" = Auto.
+    static let efforts: [ModelOption] = [
+        ModelOption(id: "", label: "Auto", note: "The model's own default, or Smart's pick"),
+        ModelOption(id: "low", label: "Light", note: "Quick answers, small fixes"),
+        ModelOption(id: "medium", label: "Normal", note: "Everyday work"),
+        ModelOption(id: "high", label: "Hard", note: "Tricky bugs, real features"),
+        ModelOption(id: "xhigh", label: "Harder", note: "Big changes, careful work"),
+        ModelOption(id: "max", label: "Hardest", note: "Slowest, uses the most"),
+    ]
+    /// Engines that can plan without changing anything, and take a thinking level.
+    static func canPlan(_ e: Engine) -> Bool { e == .claude || e == .codex }
     static func label(_ id: String?, in list: [ModelOption]) -> String? {
         guard let id, !id.isEmpty else { return nil }
         return list.first { $0.id == id }?.label ?? id
@@ -133,6 +149,11 @@ struct Conversation: Identifiable, Codable, Hashable {
     var isClaude: Bool { (engine ?? .claude) == .claude }
     /// Model picked for this chat. nil = the contact's setting (Claude) or Codex's own default.
     var model: String? = nil
+    /// How hard agents think in this chat (ModelCatalog.efforts). nil = Auto (Smart picks it, else the model's default).
+    var effort: String? = nil
+    /// Plan first: agents look around and reply with a plan, but change nothing until the user says go.
+    var planning: Bool? = nil
+    var isPlanning: Bool { planning ?? false }
     /// In a group: after answering the user, let the agents carry on with each other for a few turns.
     /// nil = on (the point of a group chat); false = they only ever answer the user.
     var chatter: Bool? = nil
