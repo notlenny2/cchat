@@ -5,12 +5,7 @@ import AppKit
 /// The Ideas button in the Water Cooler chat (and File > Water Cooler Ideas) opens the page.
 @MainActor
 enum CoolerIdeas {
-    struct Idea: Codable {
-        var app: String
-        var text: String
-        var night: String      // "Oct 5"
-        var picked: Bool = true
-    }
+    typealias Idea = CoolerIdea
 
     static var file: URL { Store.fileURL.deletingLastPathComponent().appendingPathComponent("cooler-ideas.json") }
     static var page: URL { Store.fileURL.deletingLastPathComponent().appendingPathComponent("cooler-ideas.html") }
@@ -19,9 +14,14 @@ enum CoolerIdeas {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/Water Cooler Ideas.html")
     }
 
+    /// Every idea, each with an id (older files had none; they're given one and saved).
     static func load() -> [Idea] {
-        guard let d = try? Data(contentsOf: file) else { return [] }
-        return (try? JSONDecoder().decode([Idea].self, from: d)) ?? []
+        guard let d = try? Data(contentsOf: file), var ideas = try? JSONDecoder().decode([Idea].self, from: d) else { return [] }
+        if ideas.contains(where: { $0.id == nil }) {
+            for i in ideas.indices where ideas[i].id == nil { ideas[i].id = UUID() }
+            save(ideas)
+        }
+        return ideas
     }
 
     static func save(_ ideas: [Idea]) {
@@ -53,7 +53,7 @@ enum CoolerIdeas {
         for row in rows {
             guard let app = (row["app"] as? String)?.trimmingCharacters(in: .whitespaces), !app.isEmpty,
                   let idea = (row["idea"] as? String)?.trimmingCharacters(in: .whitespaces), !idea.isEmpty else { continue }
-            ideas.append(Idea(app: String(app.prefix(60)), text: String(idea.prefix(300)), night: label))
+            ideas.append(Idea(id: UUID(), app: String(app.prefix(60)), text: String(idea.prefix(300)), night: label))
             added += 1
         }
         save(ideas)
@@ -61,10 +61,73 @@ enum CoolerIdeas {
         Log.info("water cooler ideas: added \(added) from \(label)")
     }
 
-    /// Draws the page and opens it.
-    static func open() {
+    /// Draws the web page version and opens it in the browser.
+    static func openPage() {
         render(load())
         NSWorkspace.shared.open(page)
+    }
+
+    /// Asks the window to show the Ideas sheet (the Ideas button, File > Water Cooler Ideas).
+    static func open() { NotificationCenter.default.post(name: .showCoolerIdeas, object: nil) }
+
+    /// Projects ideas can go to: real project folders only.
+    static func projects(_ store: Store) -> [(id: UUID, name: String)] {
+        store.projects.compactMap { store.projectOf($0.id) }
+    }
+
+    /// The ideas with the Mac's best guess of each one's project filled in.
+    static func listed(_ store: Store) -> [Idea] {
+        let ps = projects(store)
+        return load().map { var i = $0; i.to = match(i.app, in: ps); return i }
+    }
+
+    /// "Website and newsletter" -> Website (the first part that matches). Exact name first, then the one
+    /// project whose name contains it (or is contained in it).
+    static func match(_ app: String, in ps: [(id: UUID, name: String)]) -> UUID? {
+        func norm(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
+        for part in app.components(separatedBy: " and ") {
+            let n = norm(part)
+            guard !n.isEmpty else { continue }
+            if let p = ps.first(where: { norm($0.name) == n }) { return p.id }
+            let near = ps.filter { norm($0.name).contains(n) || n.contains(norm($0.name)) }
+            if near.count == 1 { return near[0].id }
+        }
+        return nil
+    }
+
+    /// Hands these ideas to the project's main chat (made if it doesn't exist) as a text from the user, and marks
+    /// them sent. Returns the chat.
+    static func send(_ ids: [UUID], to project: UUID, store: Store) -> UUID? {
+        guard projects(store).contains(where: { $0.id == project }), let c = store.contact(project) else { return nil }
+        var ideas = load()
+        let picked = ideas.filter { $0.id.map(ids.contains) ?? false }
+        guard !picked.isEmpty else { return nil }
+        let convId: UUID
+        if let conv = store.conversations.first(where: { $0.participantIds == [c.id] && $0.isClaude && !$0.hidden })
+            ?? store.conversations.first(where: { $0.participantIds == [c.id] && $0.isClaude }) {
+            convId = conv.id
+        } else {
+            let before = store.selectedId
+            store.openChat(with: c)
+            guard let made = store.selectedId else { return nil }
+            convId = made
+            store.selectedId = before
+        }
+        let text: String
+        if picked.count == 1 {
+            text = "An idea from the Water Cooler (\(picked[0].night)): \(picked[0].text)\n\nWhat do you think? If it's worth doing, tell me what it would take."
+        } else {
+            text = "A few ideas from the Water Cooler:\n" + picked.map { "• \($0.text)" }.joined(separator: "\n")
+                + "\n\nWhat do you think? Tell me which are worth doing and what each would take."
+        }
+        store.send(text, in: convId)
+        let f = DateFormatter(); f.dateFormat = "MMM d"
+        let today = f.string(from: Date())
+        for i in ideas.indices where ideas[i].id.map(ids.contains) ?? false { ideas[i].sent = today }
+        save(ideas)
+        render(ideas)
+        Log.info("water cooler ideas: sent \(picked.count) to \(c.name)")
+        return convId
     }
 
     static func render(_ ideas: [Idea]) {
@@ -73,7 +136,7 @@ enum CoolerIdeas {
         for i in ideas where !order.contains(where: { $0.caseInsensitiveCompare(i.app) == .orderedSame }) { order.append(i.app) }
         let groups: [[String: Any]] = order.map { app in
             let list = ideas.filter { $0.app.caseInsensitiveCompare(app) == .orderedSame }.reversed()
-            return ["app": app, "ideas": list.map { ["text": $0.text, "night": $0.night, "picked": $0.picked] }]
+            return ["app": app, "ideas": list.map { ["text": $0.text, "night": $0.night, "picked": $0.picked] as [String: Any] }]
         }
         let nights = ideas.map(\.night).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
         let json = (try? JSONSerialization.data(withJSONObject: groups))

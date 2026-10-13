@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var showNew = false
     @State private var showContacts = false
     @State private var showPairing = false
+    @State private var showIdeas = false
     @State private var buildTeam = false
     @State private var showSetup = !Prefs.setupDone
     @State private var renaming: Conversation?
@@ -49,6 +50,14 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .newMessage)) { _ in showNew = true }
         .onReceive(NotificationCenter.default.publisher(for: .showContacts)) { _ in showContacts = true }
         .onReceive(NotificationCenter.default.publisher(for: .showPairing)) { _ in showPairing = true }
+        .onReceive(NotificationCenter.default.publisher(for: .showCoolerIdeas)) { _ in showIdeas = true }
+        .sheet(isPresented: $showIdeas) {
+            CoolerIdeasView(ideas: CoolerIdeas.listed(store), projects: CoolerIdeas.projects(store),
+                            send: { ids, project in CoolerIdeas.send(ids, to: project, store: store) },
+                            finish: { conv in showIdeas = false; if let conv { store.selectedId = conv } },
+                            openPage: { CoolerIdeas.openPage() })
+                .frame(minWidth: 560, idealWidth: 640, minHeight: 520, idealHeight: 720)
+        }
         .sheet(isPresented: $showPairing) { PairingSheet() }
         .onReceive(NotificationCenter.default.publisher(for: .buildTeam)) { _ in buildTeam = true }
         .sheet(isPresented: $buildTeam) { TeamBuilder().environmentObject(store) }

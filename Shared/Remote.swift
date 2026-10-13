@@ -143,7 +143,7 @@ struct RemoteSnapshot: Codable {
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, effort, plan, newProject, ask, media, chatter, team, leave, file, read, notify, away }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, effort, plan, newProject, ask, media, chatter, team, leave, file, read, notify, away, ideas, sendIdeas }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString
@@ -184,6 +184,8 @@ struct RPCResponse: Codable {
     /// `media`: the file itself (pictures scaled down for the phone), and whether it's a video.
     var media: Data? = nil
     var isVideo: Bool? = nil
+    /// `ideas`: the Water Cooler's ideas, each with the Mac's guess of its project.
+    var ideas: [CoolerIdea]? = nil
 }
 
 enum Seal {

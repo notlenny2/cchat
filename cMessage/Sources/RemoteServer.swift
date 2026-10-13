@@ -297,6 +297,13 @@ final class RemoteServer: ObservableObject {
                f == ChatFolders.other || UUID(uuidString: f).flatMap(store.projectOf)?.id.uuidString == f {
                 store.file(c, into: f)
             } else { res.ok = false }
+        case .ideas:
+            res.ideas = CoolerIdeas.listed(store)
+        case .sendIdeas:
+            // Ideas by id, to a real project only (CoolerIdeas.send checks it).
+            let ids = (req.names ?? []).compactMap(UUID.init(uuidString:))
+            if let p = req.contact, !ids.isEmpty, let c = CoolerIdeas.send(ids, to: p, store: store) { res.convId = c }
+            else { res.ok = false }
         case .merge:
             if let c = req.conv, let t = req.target { res.convId = store.merge(c, into: t) } else { res.ok = false }
         case .open:

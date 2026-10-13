@@ -97,6 +97,7 @@ extension Notification.Name {
     static let showContacts = Notification.Name("cmessage.showContacts")
     static let renameChat = Notification.Name("cmessage.renameChat")
     static let showPairing = Notification.Name("cmessage.showPairing")
+    static let showCoolerIdeas = Notification.Name("cmessage.showCoolerIdeas")
     static let buildTeam = Notification.Name("cmessage.buildTeam")
 }
 

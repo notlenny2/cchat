@@ -172,6 +172,11 @@ final class RemoteClient: ObservableObject {
     func stopReply(_ conv: UUID) { fire(RPCRequest(op: .stop, conv: conv)) }
     func markRead(_ conv: UUID) { fire(RPCRequest(op: .markRead, conv: conv)) }
     func hide(_ conv: UUID) { fire(RPCRequest(op: .hide, conv: conv)) }
+    func coolerIdeas() async -> [CoolerIdea]? { try? await call(RPCRequest(op: .ideas)).ideas }
+    func sendIdeas(_ ids: [UUID], to project: UUID) async -> UUID? {
+        try? await call(RPCRequest(op: .sendIdeas, contact: project, names: ids.map(\.uuidString))).convId
+    }
+
     func file(_ conv: UUID, into folder: String) { fire(RPCRequest(op: .file, conv: conv, text: folder)) }
 
     /// A contact's top-level project, for the chat list's folders (same rule as the Mac's `Store.projectOf`).

@@ -13,6 +13,7 @@ struct ChatView: View {
     @State private var showLibrary = false
     @State private var showCamera = false
     @State private var sending = false
+    @State private var showIdeas = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -25,6 +26,7 @@ struct ChatView: View {
             .foregroundStyle(Clay.ink)
             .navigationTitle(client.title(conv))
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showIdeas) { IdeasSheet { conv in showIdeas = false; if let conv { client.openRequest = conv } } }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 1) {
@@ -74,6 +76,11 @@ struct ChatView: View {
                             }
                         }
                     } label: { Label(client.modelSummary(conv), systemImage: "cpu") }
+                }
+                if conv.isCooler {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showIdeas = true } label: { Label("Ideas", systemImage: "lightbulb") }
+                    }
                 }
                 if client.isBusy(convId) {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -387,5 +394,31 @@ struct RemoteMedia: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .task { if url == nil { url = await client.media(name); failed = url == nil } }
+    }
+}
+
+/// The Water Cooler's ideas, fetched from the Mac; tick some and send them to their projects' chats.
+struct IdeasSheet: View {
+    @EnvironmentObject var client: RemoteClient
+    let done: (UUID?) -> Void
+    @State private var ideas: [CoolerIdea]?
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let ideas {
+                CoolerIdeasView(ideas: ideas, projects: client.projects.map { ($0.id, $0.name) },
+                                send: { ids, p in await client.sendIdeas(ids, to: p) }, finish: done)
+            } else if failed {
+                VStack(spacing: 12) {
+                    Text("Couldn't get the ideas from your Mac.").foregroundStyle(Clay.inkSoft)
+                    Button("Close") { done(nil) }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity).background(Clay.canvas)
+            } else {
+                ProgressView("Getting ideas…").frame(maxWidth: .infinity, maxHeight: .infinity).background(Clay.canvas)
+            }
+        }
+        .task { if let got = await client.coolerIdeas() { ideas = got } else { failed = true } }
     }
 }
