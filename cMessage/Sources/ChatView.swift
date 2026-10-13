@@ -14,6 +14,7 @@ struct ChatView: View {
     /// How many of the latest messages are drawn; "Show earlier" adds more.
     @State private var shownCount = ChatView.page
     @State private var scrolledUp = false
+    @State private var paste = PicturePaste()
 
     /// The transcript is a plain VStack, not a LazyVStack: the lazy one's prefetching kicked AppKit into an endless
     /// "update constraints" loop and crashed the app (2026-09-23, twice, with SIGTRAP in LazyLayoutViewCache
@@ -52,7 +53,11 @@ struct ChatView: View {
             .foregroundStyle(Clay.ink)
             .zfont(.body)       // bubbles and the text box; smaller labels set their own
             .sheet(isPresented: $showInfo) { InfoSheet(convId: convId).environmentObject(store) }
-            .onAppear { focused = true; store.markRead(convId) }
+            .onAppear {
+                focused = true; store.markRead(convId)
+                paste.start { added in attached += added; focused = true }
+            }
+            .onDisappear { paste.stop() }
         }
     }
 

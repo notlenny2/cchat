@@ -43,4 +43,48 @@ enum ImageDrop {
             MainActor.assumeIsolated { done(ordered) }
         }
     }
+
+    /// Pictures on the clipboard (a copied screenshot, an image copied in Safari or Preview, picture files copied
+    /// in Finder), copied into `dir`. nil when the clipboard holds no pictures, so a normal text paste goes ahead.
+    /// Text wins when there's both: Word and friends put a picture of the copied text on the clipboard too.
+    static func paste(from pb: NSPasteboard = .general, into dir: URL) -> [String]? {
+        let files = (pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.contentTypeKey]).contentType?.conforms(to: .image)) == true }
+        if !files.isEmpty {
+            let paths = files.prefix(10).compactMap { Store.importImage($0, into: dir) }
+            return paths.isEmpty ? nil : paths
+        }
+        guard pb.string(forType: .string) == nil else { return nil }
+        for type in [NSPasteboard.PasteboardType.png, .tiff, NSPasteboard.PasteboardType("public.jpeg")] {
+            if let data = pb.data(forType: type), let p = Store.importImage(data: data, into: dir) { return [p] }
+        }
+        return nil
+    }
+}
+
+/// Command-V in a chat with a picture on the clipboard: the picture waits above the text box, like a drop.
+/// Watches key presses in this app only; anything that isn't a picture paste passes straight through.
+final class PicturePaste {
+    private var monitor: Any?
+
+    func start(_ added: @escaping @MainActor ([String]) -> Void) {
+        stop()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers?.lowercased() == "v",
+                  let window = event.window, !window.isSheet, window.attachedSheet == nil,
+                  // The terminal drawer has its own paste.
+                  !String(describing: type(of: window.firstResponder as Any)).contains("Terminal"),
+                  let paths = ImageDrop.paste(into: Store.attachmentsDir) else { return event }
+            MainActor.assumeIsolated { added(paths) }
+            return nil
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    deinit { stop() }
 }
