@@ -186,11 +186,15 @@ struct ChatView: View {
                         Toggle("Plan First (look, don't change anything)", isOn: Binding(
                             get: { conv.isPlanning }, set: { store.setPlanning(convId, on: $0) }))
                     }
+                    if e == .claude, !conv.isCooler {
+                        Toggle("Can Use Chrome (your browser, your sign-ins)", isOn: Binding(
+                            get: { conv.canUseChrome }, set: { store.setChrome(convId, on: $0) }))
+                    }
                 } label: {
                     Label(store.modelSummary(conv), systemImage: "cpu").zfont(.caption)
                 }
                 .menuStyle(.borderlessButton).fixedSize()
-                .help("Pick the model, how hard it thinks, and Plan First")
+                .help("Pick the model, how hard it thinks, Plan First, and Chrome")
             }
             .padding(.trailing, 16)
         }

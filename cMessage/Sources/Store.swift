@@ -396,6 +396,15 @@ final class Store: ObservableObject {
         save()
     }
 
+    func setChrome(_ convId: UUID, on: Bool) {
+        guard let i = index(of: convId), conversations[i].canUseChrome != on else { return }
+        conversations[i].chrome = on ? nil : false
+        conversations[i].messages.append(Message(senderId: nil, text: on
+            ? "Agents here can use Chrome again."
+            : "Agents here won't touch Chrome.", kind: .system))
+        save()
+    }
+
     func setPlanning(_ convId: UUID, on: Bool) {
         guard let i = index(of: convId), conversations[i].isPlanning != on else { return }
         conversations[i].planning = on ? true : nil
@@ -888,6 +897,8 @@ final class Store: ObservableObject {
 
         // Model, thinking and Plan first for this turn. "Smart" asks Haiku to pick per message.
         let planning = conv.isPlanning && ModelCatalog.canPlan(conv.engine ?? .claude)
+        // The Water Cooler only talks, so no browser there.
+        let chrome = conv.canUseChrome && !conv.isCooler
         var model = conv.model ?? agent.model
         var effort = conv.effort
         var picked: String?
@@ -948,7 +959,7 @@ final class Store: ObservableObject {
                 result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                    systemPrompt: systemPrompt(for: agent, in: conv),
                                                    model: model, fullAccess: agent.fullAccess, fork: fork, extraDirs: extraDirs,
-                                                   effort: effort, planning: planning, onStep: onStep)
+                                                   effort: effort, planning: planning, chrome: chrome, onStep: onStep)
                 // A resume can fail if the old session was cleaned up. Start fresh once rather than dying.
                 if result.isError, session != nil, result.text.localizedCaseInsensitiveContains("conversation") {
                     Log.info("resume failed for \(agent.name), starting fresh")
@@ -956,7 +967,7 @@ final class Store: ObservableObject {
                     result = try await ClaudeRunner.run(prompt: prompt, cwd: agent.projectPath, sessionId: nil,
                                                        systemPrompt: systemPrompt(for: agent, in: conv),
                                                        model: model, fullAccess: agent.fullAccess, extraDirs: extraDirs,
-                                                       effort: effort, planning: planning, onStep: onStep)
+                                                       effort: effort, planning: planning, chrome: chrome, onStep: onStep)
                 }
             }
             // Let the last few streamed steps land before they're filed with the reply.

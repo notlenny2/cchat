@@ -158,6 +158,10 @@ struct Conversation: Identifiable, Codable, Hashable {
     /// nil = on (the point of a group chat); false = they only ever answer the user.
     var chatter: Bool? = nil
     var letThemTalk: Bool { chatter ?? true }
+    /// Claude agents here can drive the user's Chrome (Claude in Chrome extension, with their sign-ins).
+    /// nil = on; false = off for this chat.
+    var chrome: Bool? = nil
+    var canUseChrome: Bool { chrome ?? true }
     /// Group photo the user dragged onto the chat header (copied into cMessage's photos folder).
     var photoPath: String? = nil
     var messages: [Message] = []

@@ -84,7 +84,7 @@ enum ClaudeRunner {
 
     static func run(prompt: String, cwd: String, sessionId: String?, systemPrompt: String,
                     model: String, fullAccess: Bool, fork: Bool = false, extraDirs: [String] = [],
-                    effort: String? = nil, planning: Bool = false,
+                    effort: String? = nil, planning: Bool = false, chrome: Bool = false,
                     onStep: (@Sendable (WorkStep) -> Void)? = nil) async throws -> ClaudeResult {
         guard let claude = await waitFor("claude", claudeSpots) else { throw RunnerError.claudeNotFound }
         var isDir: ObjCBool = false
@@ -98,6 +98,8 @@ enum ClaudeRunner {
                     "--permission-mode", planning ? "plan" : fullAccess ? "bypassPermissions" : "acceptEdits"]
         if let sessionId { args += ["--resume", sessionId] + (fork ? ["--fork-session"] : []) }
         if let effort, !effort.isEmpty { args += ["--effort", effort] }
+        // The user's own Chrome through the Claude in Chrome extension; off means no browser tools at all.
+        args.append(chrome ? "--chrome" : "--no-chrome")
         // "Default" = newest Opus. Left to itself Claude Code picks an older one; the alias always tracks the latest.
         args += ["--model", model.isEmpty ? ModelCatalog.claudeDefault : model]
         // Lets the agent open pictures the user dragged in, which live outside the project folder.
