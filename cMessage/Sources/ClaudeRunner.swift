@@ -99,7 +99,8 @@ enum ClaudeRunner {
         if let sessionId { args += ["--resume", sessionId] + (fork ? ["--fork-session"] : []) }
         if let effort, !effort.isEmpty { args += ["--effort", effort] }
         // The user's own Chrome through the Claude in Chrome extension; off means no browser tools at all.
-        args.append(chrome ? "--chrome" : "--no-chrome")
+        // The user said yes to Chrome without asking each time; nobody is there to click "allow" in cChat.
+        args += chrome ? ["--chrome", "--allowedTools", "mcp__claude-in-chrome"] : ["--no-chrome"]
         // "Default" = newest Opus. Left to itself Claude Code picks an older one; the alias always tracks the latest.
         args += ["--model", model.isEmpty ? ModelCatalog.claudeDefault : model]
         // Lets the agent open pictures the user dragged in, which live outside the project folder.
