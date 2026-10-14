@@ -390,6 +390,15 @@ final class Store: ObservableObject {
         return e.label + (ModelCatalog.label(id, in: models(for: e)).map { " · \($0)" } ?? "") + now + (thinking.map { " · \($0)" } ?? "")
     }
 
+    /// A short model label for a narrow chat header: "Sonnet" (what Smart is on) or the chosen model.
+    func modelShort(_ conv: Conversation) -> String {
+        let full = modelSummary(conv)
+        if let r = full.range(of: "("), let e = full.range(of: ")", range: r.upperBound..<full.endIndex) {
+            return String(full[r.upperBound..<e.lowerBound])
+        }
+        return full.components(separatedBy: " · ").dropFirst().first ?? full
+    }
+
     /// The chip a plan ends with. Sending it (or anything containing it) turns Plan first off.
     static let goAhead = "Go ahead with the plan"
 

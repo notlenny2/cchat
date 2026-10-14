@@ -97,8 +97,14 @@ struct ChatView: View {
     }
 
     private func fullHeader(_ conv: Conversation) -> some View {
-        HStack {
-            Spacer()
+        // Three parts side by side (never stacked on top of each other): rename on the left, the chat in the
+        // middle, the controls on the right. When the window is narrow the controls shrink to a compact set.
+        HStack(spacing: 8) {
+            Button { NotificationCenter.default.post(name: .renameChat, object: convId) } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Rename chat")
+            .frame(maxWidth: .infinity, alignment: .leading)
             Button { showInfo = true } label: {
                 VStack(spacing: 3) {
                     GroupAvatar(ids: conv.participantIds, size: 44, photo: conv.photoPath)
@@ -113,7 +119,7 @@ struct ChatView: View {
                         }
                         .help("Drop a picture here to make it the photo")
                     HStack(spacing: 2) {
-                        Text(store.title(for: conv)).zfont(.caption, weight: .medium).foregroundStyle(.primary)
+                        Text(store.title(for: conv)).zfont(.caption, weight: .medium).foregroundStyle(.primary).lineLimit(1)
                         EngineBadge(conv: conv)
                         Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
                     }
@@ -126,79 +132,81 @@ struct ChatView: View {
             .contextMenu {
                 Button("Rename…") { NotificationCenter.default.post(name: .renameChat, object: convId) }
             }
-            Spacer()
-        }
-        .overlay(alignment: .leading) {
-            Button { NotificationCenter.default.post(name: .renameChat, object: convId) } label: {
-                Image(systemName: "pencil")
+            .layoutPriority(1)
+            ViewThatFits(in: .horizontal) {
+                headerControls(conv, compact: false)
+                headerControls(conv, compact: true)
             }
-            .buttonStyle(.borderless).foregroundStyle(.secondary).help("Rename chat").padding(.leading, 16)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .overlay(alignment: .trailing) {
-            HStack(spacing: 12) {
-                if conv.isCooler {
-                    Button { CoolerIdeas.open() } label: { Label("Ideas", systemImage: "lightbulb") }
-                        .buttonStyle(.borderless).foregroundStyle(Clay.terracotta)
-                        .help("Every idea the Water Cooler has picked, sorted by app")
-                }
-                Button { showWork.toggle() } label: {
-                    Image(systemName: "apple.terminal").foregroundStyle(showWork ? Clay.terracotta : .secondary)
-                }
-                .buttonStyle(.borderless)
-                .help(showWork ? "Hide the work (View > Show the Work)" : "Show the work agents do: commands, files, output")
-                if store.isBusy(convId) {
-                    Button("Stop") { store.stop(convId) }
-                        .buttonStyle(.borderless).foregroundStyle(.red)
-                }
-                if conv.isPlanning {
-                    Button { store.setPlanning(convId, on: false) } label: {
-                        Label("Plan first", systemImage: "map").zfont(.caption)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Capsule().fill(Clay.terracotta.opacity(0.18)))
-                    }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private func headerControls(_ conv: Conversation, compact: Bool) -> some View {
+    HStack(spacing: compact ? 8 : 12) {
+            if conv.isCooler {
+                Button { CoolerIdeas.open() } label: { Label("Ideas", systemImage: "lightbulb") }
                     .buttonStyle(.borderless).foregroundStyle(Clay.terracotta)
-                    .help("Agents only plan in this chat, they don't change anything. Click to let them work.")
+                    .help("Every idea the Water Cooler has picked, sorted by app")
+            }
+            Button { showWork.toggle() } label: {
+                Image(systemName: "apple.terminal").foregroundStyle(showWork ? Clay.terracotta : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .help(showWork ? "Hide the work (View > Show the Work)" : "Show the work agents do: commands, files, output")
+            if store.isBusy(convId) {
+                Button { store.stop(convId) } label: {
+                    if compact { Image(systemName: "stop.circle.fill") } else { Text("Stop") }
                 }
-                Menu {
-                    let e = conv.engine ?? .claude
-                    Section("Model") {
-                        ForEach(store.models(for: e)) { m in
+                .buttonStyle(.borderless).foregroundStyle(.red).help("Stop")
+            }
+            if conv.isPlanning {
+                Button { store.setPlanning(convId, on: false) } label: {
+                    Label(compact ? "Plan" : "Plan first", systemImage: "map").zfont(.caption)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Clay.terracotta.opacity(0.18)))
+                }
+                .buttonStyle(.borderless).foregroundStyle(Clay.terracotta)
+                .help("Agents only plan in this chat, they don't change anything. Click to let them work.")
+            }
+            Menu {
+                let e = conv.engine ?? .claude
+                Section("Model") {
+                    ForEach(store.models(for: e)) { m in
+                        Button {
+                            store.setModel(convId, m.id)
+                        } label: {
+                            if (conv.model ?? "") == m.id { Label("\(m.label) · \(m.note)", systemImage: "checkmark") }
+                            else { Text("\(m.label) · \(m.note)") }
+                        }
+                    }
+                }
+                if ModelCatalog.canPlan(e) {
+                    Section("Thinking") {
+                        ForEach(ModelCatalog.efforts) { m in
                             Button {
-                                store.setModel(convId, m.id)
+                                store.setEffort(convId, m.id)
                             } label: {
-                                if (conv.model ?? "") == m.id { Label("\(m.label) · \(m.note)", systemImage: "checkmark") }
+                                if (conv.effort ?? "") == m.id { Label("\(m.label) · \(m.note)", systemImage: "checkmark") }
                                 else { Text("\(m.label) · \(m.note)") }
                             }
                         }
                     }
-                    if ModelCatalog.canPlan(e) {
-                        Section("Thinking") {
-                            ForEach(ModelCatalog.efforts) { m in
-                                Button {
-                                    store.setEffort(convId, m.id)
-                                } label: {
-                                    if (conv.effort ?? "") == m.id { Label("\(m.label) · \(m.note)", systemImage: "checkmark") }
-                                    else { Text("\(m.label) · \(m.note)") }
-                                }
-                            }
-                        }
-                        Divider()
-                        Toggle("Plan First (look, don't change anything)", isOn: Binding(
-                            get: { conv.isPlanning }, set: { store.setPlanning(convId, on: $0) }))
-                    }
-                    if e == .claude, !conv.isCooler {
-                        Toggle("Can Use Chrome (your browser, your sign-ins)", isOn: Binding(
-                            get: { conv.canUseChrome }, set: { store.setChrome(convId, on: $0) }))
-                    }
-                } label: {
-                    Label(store.modelSummary(conv), systemImage: "cpu").zfont(.caption)
+                    Divider()
+                    Toggle("Plan First (look, don't change anything)", isOn: Binding(
+                        get: { conv.isPlanning }, set: { store.setPlanning(convId, on: $0) }))
                 }
-                .menuStyle(.borderlessButton).fixedSize()
-                .help("Pick the model, how hard it thinks, Plan First, and Chrome")
+                if e == .claude, !conv.isCooler {
+                    Toggle("Can Use Chrome (your browser, your sign-ins)", isOn: Binding(
+                        get: { conv.canUseChrome }, set: { store.setChrome(convId, on: $0) }))
+                }
+            } label: {
+                Label(compact ? store.modelShort(conv) : store.modelSummary(conv), systemImage: "cpu").zfont(.caption)
             }
-            .padding(.trailing, 16)
+            .menuStyle(.borderlessButton).fixedSize()
+            .help("Pick the model, how hard it thinks, Plan First, and Chrome")
         }
-        .padding(.vertical, 10)
     }
 
     private func subtitle(_ conv: Conversation) -> String? {
