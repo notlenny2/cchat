@@ -14,6 +14,8 @@ final class Store: ObservableObject {
     @Published var typing: [UUID: UUID] = [:] { didSet { version += 1 } }
     /// conversationId -> who currently has that chat's project folder, while this chat waits its turn.
     @Published var waitingFor: [UUID: String] = [:] { didSet { version += 1 } }
+    /// conversation id -> what Smart is using for the reply being written, shown beside the typing dots.
+    @Published var smartNow: [UUID: String] = [:] { didSet { version += 1 } }
     /// conversationId -> what the agent answering right now has done so far this turn (View > Show the Work).
     @Published var work: [UUID: [WorkStep]] = [:]
     /// An agent's answer landed (or it said it's waiting on the user): chat, notification title, text.
@@ -382,7 +384,10 @@ final class Store: ObservableObject {
         let e = conv.engine ?? .claude
         let id = conv.model ?? (e == .claude && !conv.isGroup ? contact(conv.participantIds.first)?.model : nil)
         let thinking = ModelCatalog.canPlan(e) ? ModelCatalog.label(conv.effort, in: ModelCatalog.efforts) : nil
-        return e.label + (ModelCatalog.label(id, in: models(for: e)).map { " · \($0)" } ?? "") + (thinking.map { " · \($0)" } ?? "")
+        // Smart shows what it's on right now (or picked last), so you can see the real model.
+        let live = smartNow[conv.id].flatMap { $0.hasPrefix("Picking") ? nil : $0.components(separatedBy: " · ").first }
+        let now = id == ModelCatalog.smart ? (live ?? ModelCatalog.lastPick(conv)).map { " (\($0))" } ?? "" : ""
+        return e.label + (ModelCatalog.label(id, in: models(for: e)).map { " · \($0)" } ?? "") + now + (thinking.map { " · \($0)" } ?? "")
     }
 
     /// The chip a plan ends with. Sending it (or anything containing it) turns Plan first off.
@@ -907,12 +912,14 @@ final class Store: ObservableObject {
                 .map { m in "\(m.senderId.flatMap { contact($0) }.map(displayName) ?? Prefs.userName): \(m.text.prefix(400))" }
                 .joined(separator: "\n")
             let last = conv.messages.last { $0.senderId == agentId && $0.picked != nil }?.picked
+            smartNow[convId] = "Picking a model…"
             var pick = await SmartModel.pick(message: prompt, recent: before, memory: session.flatMap(Condense.size),
                                              last: last, planning: planning)
-            if Task.isCancelled { if typing[convId] == agentId { typing[convId] = nil }; return }
+            if Task.isCancelled { if typing[convId] == agentId { typing[convId] = nil }; smartNow[convId] = nil; return }
             model = pick.model
             if let effort, !effort.isEmpty { pick.effort = effort } else { effort = pick.effort }
             picked = pick.label
+            smartNow[convId] = pick.label
             onStep(WorkStep(kind: .info, text: "Smart pick: \(pick.label)\(pick.why.isEmpty ? "" : " (\(pick.why))")"))
         }
         do {
@@ -1045,6 +1052,7 @@ final class Store: ObservableObject {
             }
         }
         if typing[convId] == agentId { typing[convId] = nil }
+        if picked != nil { smartNow[convId] = nil }
         save()
     }
 

@@ -243,6 +243,7 @@ final class RemoteClient: ObservableObject {
         let e = c.engine ?? .claude
         let thinking = ModelCatalog.canPlan(e) ? ModelCatalog.label(c.effort, in: ModelCatalog.efforts) : nil
         return e.label + (ModelCatalog.label(c.model, in: models(for: e)).map { " · \($0)" } ?? "")
+            + (c.model == ModelCatalog.smart ? ModelCatalog.lastPick(c).map { " (\($0))" } ?? "" : "")
             + (thinking.map { " · \($0)" } ?? "") + (c.isPlanning ? " · Plan first" : "")
     }
 
@@ -379,6 +380,7 @@ final class RemoteClient: ObservableObject {
 
     func typing(in conv: UUID) -> UUID? { snapshot?.typing[conv] }
     func waitingFor(_ conv: UUID) -> String? { snapshot?.waitingFor?[conv] }
+    func smartNow(_ conv: UUID) -> String? { snapshot?.smartNow?[conv] }
     func isBusy(_ conv: UUID) -> Bool { snapshot?.busy.contains(conv) ?? false }
 }
 

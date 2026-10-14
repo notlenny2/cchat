@@ -134,6 +134,8 @@ struct RemoteSnapshot: Codable {
     var busy: [UUID]
     /// conversation id -> who has that project folder while this chat waits its turn.
     var waitingFor: [UUID: String]? = nil
+    /// conversation id -> what Smart is using for the reply being written ("Picking a model…", then "Sonnet · …").
+    var smartNow: [UUID: String]? = nil
     /// Models the phone can offer, per engine.
     var models: [String: [ModelOption]]? = nil
     /// How much of the Claude and Codex plans is used, for the meter under the chat list.

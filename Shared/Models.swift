@@ -134,6 +134,10 @@ enum ModelCatalog {
         guard let id, !id.isEmpty else { return nil }
         return list.first { $0.id == id }?.label ?? id
     }
+    /// The model Smart used for this chat's latest reply ("Sonnet"), for the chat header.
+    static func lastPick(_ c: Conversation) -> String? {
+        c.messages.last { $0.picked != nil }?.picked?.components(separatedBy: " · ").first
+    }
 }
 
 struct Conversation: Identifiable, Codable, Hashable {

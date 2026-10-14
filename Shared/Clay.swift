@@ -83,6 +83,19 @@ struct NeedsYouTag: View {
     }
 }
 
+/// The model Smart is using ("Sonnet · normal thinking"), as a small pill under a reply or beside the typing dots.
+struct SmartTag: View {
+    let text: String
+    var body: some View {
+        Label(text, systemImage: "sparkles")
+            .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Clay.terracotta)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(Clay.terracotta.opacity(0.14)))
+            .fixedSize()
+            .help("Smart picked this model and thinking level")
+    }
+}
+
 /// A shape made of clay: a slightly lighter top, a highlight along the top edge, a darker lip along
 /// the bottom, and a soft warm shadow underneath.
 struct ClaySurface<S: InsettableShape>: View {

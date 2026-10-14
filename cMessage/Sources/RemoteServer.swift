@@ -384,6 +384,7 @@ final class RemoteServer: ObservableObject {
                               typing: store.typing,
                               busy: store.conversations.map(\.id).filter(store.isBusy),
                               waitingFor: store.waitingFor,
+                              smartNow: store.smartNow,
                               // Only engines this Mac can run; the phone offers exactly these.
                               models: Dictionary(uniqueKeysWithValues: store.availableEngines.map { ($0.rawValue, store.models(for: $0)) }),
                               usage: store.usage.isEmpty ? nil : store.usage,

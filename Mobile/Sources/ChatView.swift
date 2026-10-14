@@ -114,6 +114,8 @@ struct ChatView: View {
                                 .clay(Clay.cream, radius: 20)
                             if let w = client.waitingFor(convId) {
                                 Text("waiting for \(w)").font(.caption2).foregroundStyle(.secondary)
+                            } else if let s = client.smartNow(convId) {
+                                SmartTag(text: s).padding(.bottom, 8)
                             }
                             Spacer()
                         }
@@ -333,6 +335,9 @@ struct Bubble: View {
                         if mine, !message.text.isEmpty { bubbleText }
                     }
                     if !mine { Spacer(minLength: 60) }
+                }
+                if !mine, let picked = message.picked {
+                    SmartTag(text: picked).padding(.leading, isGroup ? 48 : 12)
                 }
                 if message.kind == .error {
                     Label("Not Delivered", systemImage: "exclamationmark.circle.fill")

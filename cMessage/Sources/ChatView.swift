@@ -231,7 +231,7 @@ struct ChatView: View {
                     }
                     if let t = store.typing[convId] {
                         TypingRow(contact: store.contact(t), isGroup: conv.isGroup,
-                                  waitingFor: store.waitingFor[convId]).id("typing")
+                                  waitingFor: store.waitingFor[convId], smart: store.smartNow[convId]).id("typing")
                         if showWork, let steps = store.work[convId], !steps.isEmpty {
                             WorkLog(steps: steps, live: true)
                                 .padding(.leading, conv.isGroup ? 36 : 0).padding(.trailing, 80).padding(.top, 4)
@@ -409,8 +409,7 @@ struct MessageRow: View {
                     if !mine { Spacer(minLength: 80) }
                 }
                 if !mine, let picked = message.picked {
-                    Text(picked).zfont(.caption2).foregroundStyle(.secondary)
-                        .padding(.leading, isGroup ? 48 : 12).help("Smart picked this model and thinking for this reply")
+                    SmartTag(text: picked).padding(.leading, isGroup ? 48 : 12)
                 }
                 if showWork, !mine, let steps = message.work, !steps.isEmpty {
                     WorkDisclosure(steps: steps)
@@ -450,6 +449,7 @@ struct TypingRow: View {
     let contact: Contact?
     let isGroup: Bool
     var waitingFor: String? = nil
+    var smart: String? = nil
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -457,6 +457,7 @@ struct TypingRow: View {
             TypingDots(dot: 8)
                 .padding(.horizontal, 15).padding(.vertical, 12)
                 .clay(Clay.cream, radius: 20)
+            if waitingFor == nil, let smart { SmartTag(text: smart).padding(.bottom, 8) }
             if let w = waitingFor {
                 Text("waiting for \(w) to finish in this project").zfont(.caption2).foregroundStyle(.secondary)
             } else if isGroup, let c = contact {
