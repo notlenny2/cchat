@@ -332,6 +332,13 @@ final class RemoteServer: ObservableObject {
             } else { res.ok = false; res.error = "Pick a project and at least one team member." }
         case .leave:
             if let c = req.conv, let who = req.contact { store.removeFromGroup(c, who) } else { res.ok = false }
+        case .schedule:
+            guard let c = req.conv, let at = req.at, let t = req.text, !t.isEmpty else { res.ok = false; res.error = "Nothing to schedule."; break }
+            // A time already past just goes out on the next check; a year out is surely a mistake.
+            guard at < Date().addingTimeInterval(366 * 86400) else { res.ok = false; res.error = "That's too far away."; break }
+            store.schedule(t, in: c, at: at, why: req.to.map { String($0.prefix(80)) }, from: client)
+        case .unschedule:
+            if let c = req.conv, let id = req.target { store.unschedule(id, in: c, sendNow: req.wait ?? false) } else { res.ok = false }
         case .chatter:
             if let c = req.conv { store.setChatter(c, on: req.wait ?? true) } else { res.ok = false }
         case .setModel:

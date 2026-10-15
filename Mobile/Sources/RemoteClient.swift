@@ -165,6 +165,13 @@ final class RemoteClient: ObservableObject {
         let out = UIGraphicsImageRenderer(size: size, format: format).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
         return out.jpegData(compressionQuality: 0.8)
     }
+    /// Send later: the Mac holds it and sends it at `at` (it has to be on and running cChat then).
+    func schedule(_ text: String, in conv: UUID, at: Date, why: String?) {
+        var req = RPCRequest(op: .schedule, conv: conv, text: text, to: why)
+        req.at = at
+        fire(req)
+    }
+    func unschedule(_ id: UUID, in conv: UUID, sendNow: Bool) { fire(RPCRequest(op: .unschedule, conv: conv, target: id, wait: sendNow)) }
     func rename(_ conv: UUID, to name: String) { fire(RPCRequest(op: .rename, conv: conv, text: name)) }
     func togglePin(_ conv: UUID) { fire(RPCRequest(op: .pin, conv: conv)) }
     /// Mark as Read (also clears Needs you) or Mark as Unread.

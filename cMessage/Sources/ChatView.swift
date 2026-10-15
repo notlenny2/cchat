@@ -14,6 +14,8 @@ struct ChatView: View {
     /// How many of the latest messages are drawn; "Show earlier" adds more.
     @State private var shownCount = ChatView.page
     @State private var scrolledUp = false
+    @State private var pickTime = false
+    @State private var customTime = Date().addingTimeInterval(3600)
     @State private var paste = PicturePaste()
 
     /// The transcript is a plain VStack, not a LazyVStack: the lazy one's prefetching kicked AppKit into an endless
@@ -328,6 +330,10 @@ struct ChatView: View {
                     .padding(.horizontal, 16)
                 }
             }
+            if let waiting = conv.scheduled, !waiting.isEmpty {
+                VStack(spacing: 6) { ForEach(waiting) { scheduledRow($0) } }
+                    .padding(.horizontal, 16)
+            }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField(attached.isEmpty ? "Text \(store.title(for: conv))" : "Add a note, or just hit return", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -349,6 +355,8 @@ struct ChatView: View {
                     )
                 #if CCHAT_SOLO
                 SoloExtras.ComposerButtons(draft: $draft)
+                #else
+                sendLaterMenu(conv)
                 #endif
                 Button(action: sendDraft) {
                     let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty
@@ -371,6 +379,74 @@ struct ChatView: View {
         let t = draft, a = attached
         draft = ""; attached = []
         store.send(t, in: convId, attachments: a)
+    }
+
+    // MARK: Send later
+
+    private var draftEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty }
+
+    /// The clock beside the send button: send what's in the box later, at a time or when a limit resets.
+    private func sendLaterMenu(_ conv: Conversation) -> some View {
+        Menu {
+            Section(draftEmpty ? "Type something first, then pick when" : "Send later") {
+                ForEach(SendLater.choices(usage: store.usage, engine: conv.engine)) { c in
+                    Button(c.label) { scheduleDraft(at: c.at, why: c.why) }
+                }
+                Button("Pick a Time…") { customTime = Date().addingTimeInterval(3600); pickTime = true }
+            }
+            .disabled(draftEmpty)
+        } label: {
+            Image(systemName: "clock")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(Clay.inkSoft)
+                .frame(width: 34, height: 34)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Send later: at a time you pick, or when your limit resets")
+        .popover(isPresented: $pickTime, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Send this at").font(.system(.headline, design: .rounded))
+                DatePicker("", selection: $customTime, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    .datePickerStyle(.graphical).labelsHidden()
+                HStack {
+                    Spacer()
+                    Button("Cancel") { pickTime = false }
+                    Button("Schedule") { scheduleDraft(at: customTime, why: nil); pickTime = false }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private func scheduleDraft(at: Date, why: String?) {
+        guard !draftEmpty else { return }
+        let t = draft, a = attached
+        draft = ""; attached = []
+        store.schedule(t, in: convId, at: at, why: why, attachments: a)
+    }
+
+    /// One waiting text above the box: what it says, when it goes, and send now / cancel.
+    private func scheduledRow(_ s: ScheduledSend) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.fill").foregroundStyle(Clay.terracotta)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(s.text.isEmpty ? "📷 Picture" : s.text).zfont(.callout, weight: .medium).lineLimit(1)
+                    .foregroundStyle(Clay.ink)
+                Text(SendLater.caption(s)).zfont(.caption).foregroundStyle(Clay.inkSoft)
+            }
+            Spacer(minLength: 8)
+            Button("Send Now") { store.unschedule(s.id, in: convId, sendNow: true) }
+                .buttonStyle(.plain).zfont(.caption, weight: .semibold).foregroundStyle(Clay.terracotta)
+            Button { store.unschedule(s.id, in: convId) } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(Clay.inkSoft)
+            }
+            .buttonStyle(.plain).help("Don't send it")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .clay(Clay.cream, radius: 14, depth: 0.6)
     }
 }
 

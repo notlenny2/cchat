@@ -201,6 +201,8 @@ struct Conversation: Identifiable, Codable, Hashable {
     /// Talk only; nobody in it touches files or buzzes the user's phone.
     var cooler: Bool? = nil
     var isCooler: Bool { cooler == true }
+    /// Texts waiting to go out later (a set time, or when a usage limit resets), soonest first.
+    var scheduled: [ScheduledSend]? = nil
 
     var isGroup: Bool { participantIds.count > 1 }
     var lastDate: Date { messages.last?.date ?? .distantPast }

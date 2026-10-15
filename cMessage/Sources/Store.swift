@@ -67,7 +67,16 @@ final class Store: ObservableObject {
             Task.detached(priority: .utility) { Backups.takeIfDue() }
             Task { @MainActor in if let self { WaterCooler.shared.tick(self) } }
         }
+        scheduleTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.sendDue() }
+        }
+        // Give the window a moment to come up before anything that came due while cChat was closed goes out.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            self?.sendDue()
+        }
     }
+    private var scheduleTimer: Timer?
 
     private func refreshCodexUsage() {
         Task.detached(priority: .utility) {
@@ -652,6 +661,44 @@ final class Store: ObservableObject {
         if typing[convId] == nil { typing[convId] = conversations[i].pending.first ?? Store.routerId }
         save()
         pump(convId)
+    }
+
+    // MARK: Send later
+
+    func schedule(_ raw: String, in convId: UUID, at: Date, why: String? = nil, attachments: [String] = [], from: String? = nil) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !attachments.isEmpty, let i = index(of: convId) else { return }
+        var list = conversations[i].scheduled ?? []
+        list.append(ScheduledSend(text: text, attachments: attachments.isEmpty ? nil : attachments, at: at, why: why, from: from))
+        conversations[i].scheduled = list.sorted { $0.at < $1.at }
+        Log.info("scheduled a send for \(at) in \(convId)")
+        save()
+    }
+
+    /// Drops a waiting text, or (`now`) sends it straight away.
+    func unschedule(_ id: UUID, in convId: UUID, sendNow: Bool = false) {
+        guard let i = index(of: convId), let s = conversations[i].scheduled?.first(where: { $0.id == id }) else { return }
+        conversations[i].scheduled?.removeAll { $0.id == id }
+        if conversations[i].scheduled?.isEmpty == true { conversations[i].scheduled = nil }
+        if sendNow { send(s.text, in: convId, attachments: s.attachments ?? [], from: s.from) } else { save() }
+    }
+
+    /// Sends everything that's come due. Runs every 15 seconds and at launch (anything missed while cChat was
+    /// closed goes out then, with a note saying so).
+    func sendDue(now: Date = Date()) {
+        for conv in conversations {
+            for s in conv.scheduled ?? [] where s.at <= now {
+                guard let i = index(of: conv.id) else { continue }
+                conversations[i].scheduled?.removeAll { $0.id == s.id }
+                if conversations[i].scheduled?.isEmpty == true { conversations[i].scheduled = nil }
+                let late = now.timeIntervalSince(s.at) > 300
+                let note = late ? "Sent late (cChat was closed at \(SendLater.when(s.at))), as you scheduled."
+                    : "Sent as you scheduled" + (s.why.map { ", \($0)." } ?? ".")
+                conversations[i].messages.append(Message(senderId: nil, text: note, kind: .system))
+                Log.info("sending a scheduled text in \(conv.id)\(late ? " (late)" : "")")
+                send(s.text, in: conv.id, attachments: s.attachments ?? [], from: s.from)
+            }
+        }
     }
 
     /// How many agent messages may follow one of the user's before they have to hand the thread back.

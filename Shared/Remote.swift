@@ -145,7 +145,7 @@ struct RemoteSnapshot: Codable {
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, effort, plan, newProject, ask, media, chatter, team, leave, file, read, notify, away, ideas, sendIdeas }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, effort, plan, newProject, ask, media, chatter, team, leave, file, read, notify, away, ideas, sendIdeas, schedule, unschedule }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString
@@ -172,6 +172,9 @@ struct RPCRequest: Codable {
     var device: String? = nil
     /// `notify`: the phone app's bundle id, which Apple needs to deliver to the right app.
     var topic: String? = nil
+    /// `schedule`: when to send `text` (and `why`, e.g. "when your Claude limit resets", in `to`).
+    /// `unschedule`: `target` = the scheduled text's id; `wait` true = send it right now instead of dropping it.
+    var at: Date? = nil
 }
 
 struct RPCResponse: Codable {
@@ -227,6 +230,11 @@ extension Conversation {
         c.pending = []
         c.routeNext = nil
         c.photoPath = nil
+        c.scheduled = c.scheduled?.map { s in
+            var s = s
+            s.attachments = s.attachments?.map { URL(fileURLWithPath: $0).lastPathComponent }
+            return s
+        }
         // Only the file names leave the Mac; the phone fetches each one with the `media` request.
         c.messages = c.messages.map { m in
             var m = m

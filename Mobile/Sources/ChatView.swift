@@ -14,6 +14,8 @@ struct ChatView: View {
     @State private var showCamera = false
     @State private var sending = false
     @State private var showIdeas = false
+    @State private var pickTime = false
+    @State private var customTime = Date().addingTimeInterval(3600)
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -187,6 +189,10 @@ struct ChatView: View {
                     .padding(.horizontal, 14)
                 }
             }
+            if let waiting = conv.scheduled, !waiting.isEmpty {
+                VStack(spacing: 6) { ForEach(waiting) { scheduledRow($0) } }
+                    .padding(.horizontal, 14)
+            }
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
                     if UIImagePickerController.isSourceTypeAvailable(.camera) {
@@ -221,8 +227,25 @@ struct ChatView: View {
                         .background(ClaySurface(shape: Circle(), color: empty ? Clay.inkSoft.opacity(0.45) : Clay.terracotta, depth: empty ? 0.4 : 1))
                 }
                 .disabled(sending)
+                // Press and hold the send button for Send Later (like Messages).
+                .contextMenu { sendLaterItems(conv) }
             }
             .padding(.horizontal, 12)
+        }
+        .sheet(isPresented: $pickTime) {
+            NavigationStack {
+                DatePicker("Send at", selection: $customTime, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    .datePickerStyle(.graphical).padding()
+                    .navigationTitle("Send Later").navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { pickTime = false } }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Schedule") { scheduleDraft(at: customTime, why: nil); pickTime = false }
+                        }
+                    }
+                Spacer()
+            }
+            .presentationDetents([.medium, .large])
         }
         .photosPicker(isPresented: $showLibrary, selection: $libraryPicks,
                       maxSelectionCount: max(1, RPCRequest.maxImages - pictures.count), matching: .images)
@@ -248,6 +271,51 @@ struct ChatView: View {
 }
 
 extension ChatView {
+    // MARK: Send later
+
+    @ViewBuilder private func sendLaterItems(_ conv: Conversation) -> some View {
+        let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !pictures.isEmpty {
+            Text("Pictures can't be scheduled yet")
+        } else if empty {
+            Text("Type something first, then hold to send later")
+        } else {
+            ForEach(SendLater.choices(usage: client.snapshot?.usage ?? UsageReport(), engine: conv.engine)) { c in
+                Button { scheduleDraft(at: c.at, why: c.why) } label: { Label(c.label, systemImage: "clock") }
+            }
+            Button { customTime = Date().addingTimeInterval(3600); pickTime = true } label: {
+                Label("Pick a Time…", systemImage: "calendar")
+            }
+        }
+    }
+
+    private func scheduleDraft(at: Date, why: String?) {
+        let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, pictures.isEmpty else { return }
+        draft = ""
+        client.schedule(t, in: convId, at: at, why: why)
+    }
+
+    private func scheduledRow(_ s: ScheduledSend) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.fill").foregroundStyle(Clay.terracotta)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(s.text.isEmpty ? "📷 Picture" : s.text).font(.callout.weight(.medium)).lineLimit(1)
+                Text(SendLater.caption(s)).font(.caption).foregroundStyle(Clay.inkSoft)
+            }
+            Spacer(minLength: 6)
+            Button("Send Now") { client.unschedule(s.id, in: convId, sendNow: true) }
+                .font(.caption.weight(.semibold)).foregroundStyle(Clay.terracotta)
+            Button { client.unschedule(s.id, in: convId, sendNow: false) } label: {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundStyle(Clay.inkSoft)
+            }
+            .accessibilityLabel("Don't send it")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .clay(Clay.cream, radius: 14, depth: 0.6)
+    }
+
     private func sendNow() {
         let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         if pictures.isEmpty {
