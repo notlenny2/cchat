@@ -105,9 +105,10 @@ struct PulseGlow: ViewModifier {
         if let color {
             TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
                 let p = 0.5 + 0.5 * sin(ctx.date.timeIntervalSinceReferenceDate * 2.4)   // ~2.6s breath
-                // The ring sits right on the picture's edge (no gap), and two layered shadows make the halo.
+                // The ring hugs the outside of the picture (no gap) and sits BEHIND it, so the little initials
+                // badge on the edge covers the ring instead of being cut by it. Two layered shadows make the halo.
                 content
-                    .overlay(Circle().strokeBorder(color.opacity(0.75 + 0.25 * p), lineWidth: 3.5).opacity(circle ? 1 : 0))
+                    .background(Circle().strokeBorder(color.opacity(0.75 + 0.25 * p), lineWidth: 3.5).padding(-3.5).opacity(circle ? 1 : 0))
                     .shadow(color: color.opacity(0.55 + 0.45 * p), radius: 3 + 5 * p)
                     .shadow(color: color.opacity(0.35 + 0.55 * p), radius: 8 + 14 * p)
             }
