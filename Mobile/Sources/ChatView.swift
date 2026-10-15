@@ -379,7 +379,24 @@ struct RemoteMedia: View {
 
     private var isVideo: Bool { ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: name).pathExtension.lowercased()) }
 
+    private var isPicture: Bool {
+        ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"].contains(URL(fileURLWithPath: name).pathExtension.lowercased())
+    }
+    /// A document dropped on the Mac: just its name (it stays on the Mac).
+    private var docName: String {
+        let parts = name.split(separator: "-", maxSplits: 1)
+        return parts.count == 2 && parts[0].count == 8 && parts[0].allSatisfy(\.isHexDigit) ? String(parts[1]) : name
+    }
+
     var body: some View {
+        if !isVideo && !isPicture {
+            Label(docName, systemImage: "doc.text").font(.callout).lineLimit(2)
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        } else { media }
+    }
+
+    private var media: some View {
         Group {
             if let url {
                 if isVideo {

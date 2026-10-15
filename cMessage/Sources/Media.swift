@@ -11,6 +11,8 @@ enum Media {
     static let maxBytes = 1_000_000_000
 
     static func isVideo(_ path: String) -> Bool { videoExts.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) }
+    /// Pictures only: not videos, not dropped documents.
+    static func isPicture(_ path: String) -> Bool { imageExts.contains(URL(fileURLWithPath: path).pathExtension.lowercased()) }
 
     /// Pulls `<<show: ...>>` markers (and markdown images `![](...)`) out of a reply.
     static func extract(from text: String) -> (String, [String]) {
@@ -128,6 +130,9 @@ struct MediaView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { VideoWindow.play(path) }
                 .task { if poster == nil { poster = Media.poster(path) } }
+            } else if Documents.isDocument(path) {
+                DocChip(path: path)
+                    .onTapGesture(count: 2) { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
             } else if let img = IconCache.image(path) {
                 // Sized exactly to the picture: a 320x320 box centered a narrow one, so it sat indented from the bubbles.
                 let k = min(320 / max(img.size.width, 1), 320 / max(img.size.height, 1))
@@ -141,5 +146,21 @@ struct MediaView: View {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
         }
         .onDrag { NSItemProvider(contentsOf: URL(fileURLWithPath: path)) ?? NSItemProvider() }
+    }
+}
+
+/// A dropped document in a bubble: its Finder icon and real name. Double-click opens it.
+struct DocChip: View {
+    let path: String
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: path)).resizable().frame(width: 34, height: 34)
+            Text(Documents.displayName(path)).font(.callout.weight(.medium)).lineLimit(2).truncationMode(.middle)
+                .foregroundStyle(Clay.ink)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .frame(maxWidth: 280, alignment: .leading)
+        .background(Clay.peach.opacity(0.7))
+        .help(Documents.displayName(path))
     }
 }

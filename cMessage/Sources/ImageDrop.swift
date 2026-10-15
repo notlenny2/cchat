@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 /// Accepts pictures dragged from anywhere: Finder files, and apps like Messages, Photos and Safari,
 /// which hand over the picture itself (often as a "promised" file that only exists for a moment)
 /// rather than a file on disk. Every picture is copied into cChat's own folder as a PNG.
+/// Document files from Finder (spreadsheets, Word files, PDFs, text) come along too, copied as they are (`Documents`).
 enum ImageDrop {
     static let types: [UTType] = [.fileURL, .image]
 
@@ -17,7 +18,8 @@ enum ImageDrop {
             group.enter()
             if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 _ = p.loadObject(ofClass: URL.self) { url, _ in
-                    add(i, url.flatMap { Store.importImage($0, into: dir) })
+                    add(i, url.flatMap { Documents.isDocument($0.path) ? Documents.importFile($0, into: dir)
+                                                                       : Store.importImage($0, into: dir) })
                     group.leave()
                 }
             } else if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) {

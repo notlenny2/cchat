@@ -843,16 +843,26 @@ final class Store: ObservableObject {
         let endIndex = conv.messages.count
 
         func body(_ m: Message) -> String {
-            let a = (m.attachments ?? []).filter { !Media.isVideo($0) }
-            guard !a.isEmpty else { return m.text }
-            let pics: String
-            switch conv.engine ?? .claude {
-            case .codex: pics = a.map { _ in "[A picture is attached, included with this message]" }.joined(separator: "\n")
-            case .gemini: pics = a.map { _ in "[A picture is attached; it is the @file at the end of this message]" }.joined(separator: "\n")
-            case .claude: pics = a.map { "[A picture is attached. Open it with the Read tool: \($0)]" }.joined(separator: "\n")
-            case .grok: pics = a.map { "[A picture is attached. Open it with your file-reading tool: \($0)]" }.joined(separator: "\n")
+            let a = (m.attachments ?? []).filter(Media.isPicture)
+            let docs = (m.attachments ?? []).filter(Documents.isDocument).map { path -> String in
+                let name = Documents.displayName(path)
+                guard let r = Documents.readable(path) else {
+                    return "[A file is attached: \(name), at \(path). cChat couldn't make a readable copy of it.]"
+                }
+                let copy = r == path ? "" : " (a plain-text copy of it; the original is \(path))"
+                return "[A file is attached: \(name). Open it with your file-reading tool: \(r)\(copy)]"
             }
-            return m.text.isEmpty ? pics : "\(m.text)\n\(pics)"
+            guard !a.isEmpty || !docs.isEmpty else { return m.text }
+            var pics: [String]
+            switch conv.engine ?? .claude {
+            case .codex: pics = a.map { _ in "[A picture is attached, included with this message]" }
+            case .gemini: pics = a.map { _ in "[A picture is attached; it is the @file at the end of this message]" }
+            case .claude: pics = a.map { "[A picture is attached. Open it with the Read tool: \($0)]" }
+            case .grok: pics = a.map { "[A picture is attached. Open it with your file-reading tool: \($0)]" }
+            }
+            pics += docs
+            let all = pics.joined(separator: "\n")
+            return m.text.isEmpty ? all : "\(m.text)\n\(all)"
         }
         var prompt: String
         if conv.isGroup {
@@ -945,7 +955,7 @@ final class Store: ObservableObject {
                                                             fullAccess: agent.fullAccess, model: conv.model, onStep: onStep)
                 }
             } else if conv.usesGemini {
-                let images = fresh.flatMap { $0.attachments ?? [] }.filter { !Media.isVideo($0) }
+                let images = fresh.flatMap { $0.attachments ?? [] }.filter(Media.isPicture)
                 result = try await ClaudeRunner.runGemini(prompt: prompt, cwd: agent.projectPath, sessionId: session,
                                                           instructions: systemPrompt(for: agent, in: conv),
                                                           fullAccess: agent.fullAccess, images: images, model: conv.model, onStep: onStep)
@@ -958,7 +968,7 @@ final class Store: ObservableObject {
                                                               fullAccess: agent.fullAccess, images: images, model: conv.model, onStep: onStep)
                 }
             } else if conv.usesCodex {
-                let images = fresh.flatMap { $0.attachments ?? [] }.filter { !Media.isVideo($0) }
+                let images = fresh.flatMap { $0.attachments ?? [] }.filter(Media.isPicture)
                 result = try await ClaudeRunner.runCodex(prompt: prompt, cwd: agent.projectPath, threadId: session,
                                                          instructions: systemPrompt(for: agent, in: conv),
                                                          fullAccess: agent.fullAccess, images: images, model: conv.model,
