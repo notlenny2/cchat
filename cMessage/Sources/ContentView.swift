@@ -351,6 +351,12 @@ struct PinnedGrid: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
+                    if c.unread || c.needsYou != nil {
+                        Button("Mark as Read") { withAnimation { store.setRead([c.id]) } }
+                    } else {
+                        Button("Mark as Unread") { withAnimation { store.setRead([c.id], unread: true) } }
+                    }
+                    Divider()
                     Button("Unpin") { withAnimation { store.togglePin(c.id) } }
                 }
     }
