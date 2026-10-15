@@ -228,7 +228,9 @@ struct PinnedCell: View {
     var body: some View {
         VStack(spacing: 5) {
             GroupAvatar(ids: conv.participantIds, size: 64)
-                .pulseGlow(conv.needsYou != nil ? NeedsYouTag.color : conv.unread ? Palette.blue : nil)
+                .overlay(Circle().stroke(!conv.unread && conv.needsYou != nil ? NeedsYouTag.color : .clear, lineWidth: 2.5).padding(-3))
+                // Only something new pulses; once read, a chat still waiting on you keeps a steady amber ring.
+                .pulseGlow(conv.unread ? (conv.needsYou != nil ? NeedsYouTag.color : Palette.blue) : nil)
                 .overlay(alignment: .topTrailing) {
                     if client.typing(in: conv.id) != nil {
                         TypingDots(dot: 4).padding(.horizontal, 6).padding(.vertical, 5)

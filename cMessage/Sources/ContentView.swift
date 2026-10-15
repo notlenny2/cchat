@@ -323,7 +323,15 @@ struct PinnedGrid: View {
 
     /// Something new here: amber if an agent is waiting on the user, else the accent if it's unread.
     private func glow(_ c: Conversation) -> Color? {
-        c.needsYou != nil ? NeedsYouTag.color : c.unread ? Palette.blue : nil
+        // Only something new pulses. Once read, a chat still waiting on the user keeps a steady amber ring.
+        guard c.unread else { return nil }
+        return c.needsYou != nil ? NeedsYouTag.color : Palette.blue
+    }
+
+    private func ring(_ c: Conversation) -> Color {
+        if glow(c) != nil { return .clear }
+        if c.needsYou != nil { return NeedsYouTag.color }
+        return selected == c.id ? Palette.blue : .clear
     }
 
     private func tile(_ c: Conversation) -> some View {
@@ -338,7 +346,7 @@ struct PinnedGrid: View {
                                         .offset(x: 8, y: -4)
                                 }
                             }
-                            .overlay(Circle().stroke(selected == c.id && glow(c) == nil ? Palette.blue : .clear, lineWidth: 2.5).padding(-3))
+                            .overlay(Circle().stroke(ring(c), lineWidth: 2.5).padding(-3))
                             .pulseGlow(glow(c))
                         HStack(spacing: 4) {
                             if c.unread { Circle().fill(Palette.blue).frame(width: 7, height: 7).pulseGlow(Palette.blue, ring: false) }
