@@ -96,6 +96,30 @@ struct SmartTag: View {
     }
 }
 
+/// A soft breathing glow around a pinned avatar or an unread dot, so a chat with something new catches the eye.
+/// Amber when an agent is waiting on the user, the accent color when there's simply something unread.
+struct PulseGlow: ViewModifier {
+    let color: Color?
+    var circle = true
+    func body(content: Content) -> some View {
+        if let color {
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
+                let p = 0.5 + 0.5 * sin(ctx.date.timeIntervalSinceReferenceDate * 2.4)   // ~2.6s breath
+                content
+                    .overlay(Circle().stroke(color.opacity(0.55 + 0.45 * p), lineWidth: 2.5).padding(-3).opacity(circle ? 1 : 0))
+                    .shadow(color: color.opacity(0.35 + 0.5 * p), radius: 4 + 8 * p)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Pulses when `color` is set; does nothing otherwise.
+    func pulseGlow(_ color: Color?, ring: Bool = true) -> some View { modifier(PulseGlow(color: color, circle: ring)) }
+}
+
 /// A shape made of clay: a slightly lighter top, a highlight along the top edge, a darker lip along
 /// the bottom, and a soft warm shadow underneath.
 struct ClaySurface<S: InsettableShape>: View {

@@ -249,7 +249,8 @@ struct ConversationRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 8, height: 8).padding(.top, big ? 22 : 11)
+            Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 8, height: 8)
+                .pulseGlow(conv.unread ? Palette.blue : nil, ring: false).padding(.top, big ? 22 : 11)
             // Single chats: smaller picture, right-aligned in the group's slot plus a step in, so their
             // picture and name always sit to the right of a group's, never left of it.
             GroupAvatar(ids: conv.participantIds, size: big ? 54 : 30, photo: conv.photoPath)
@@ -320,6 +321,11 @@ struct PinnedGrid: View {
         .padding(.vertical, 8)
     }
 
+    /// Something new here: amber if an agent is waiting on the user, else the accent if it's unread.
+    private func glow(_ c: Conversation) -> Color? {
+        c.needsYou != nil ? NeedsYouTag.color : c.unread ? Palette.blue : nil
+    }
+
     private func tile(_ c: Conversation) -> some View {
                 Button { selected = c.id } label: {
                     VStack(spacing: 4) {
@@ -332,9 +338,10 @@ struct PinnedGrid: View {
                                         .offset(x: 8, y: -4)
                                 }
                             }
-                            .overlay(Circle().stroke(selected == c.id ? Palette.blue : c.needsYou != nil ? NeedsYouTag.color : .clear, lineWidth: 2.5).padding(-3))
+                            .overlay(Circle().stroke(selected == c.id && glow(c) == nil ? Palette.blue : .clear, lineWidth: 2.5).padding(-3))
+                            .pulseGlow(glow(c))
                         HStack(spacing: 4) {
-                            if c.unread { Circle().fill(Palette.blue).frame(width: 7, height: 7) }
+                            if c.unread { Circle().fill(Palette.blue).frame(width: 7, height: 7).pulseGlow(Palette.blue, ring: false) }
                             Text(store.title(for: c)).zfont(.caption).lineLimit(1)
                                 .foregroundStyle(selected == c.id ? Clay.terracotta : Clay.ink)
                         }

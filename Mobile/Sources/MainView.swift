@@ -182,6 +182,7 @@ struct Row: View {
     var body: some View {
         HStack(spacing: 10) {
             Circle().fill(conv.unread ? Palette.blue : .clear).frame(width: 9, height: 9)
+                .pulseGlow(conv.unread ? Palette.blue : nil, ring: false)
             // Groups read bigger than single chats (project heading > group > single chat).
             // Single chats sit a step to the right of groups (picture and name), never left of them.
             GroupAvatar(ids: conv.participantIds, size: conv.isGroup ? 60 : 34)
@@ -227,7 +228,7 @@ struct PinnedCell: View {
     var body: some View {
         VStack(spacing: 5) {
             GroupAvatar(ids: conv.participantIds, size: 64)
-                .overlay(Circle().stroke(conv.needsYou != nil ? NeedsYouTag.color : .clear, lineWidth: 2.5).padding(-3))
+                .pulseGlow(conv.needsYou != nil ? NeedsYouTag.color : conv.unread ? Palette.blue : nil)
                 .overlay(alignment: .topTrailing) {
                     if client.typing(in: conv.id) != nil {
                         TypingDots(dot: 4).padding(.horizontal, 6).padding(.vertical, 5)
