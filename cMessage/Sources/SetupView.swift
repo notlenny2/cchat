@@ -162,6 +162,12 @@ struct SetupView: View {
                 }
             }
 
+            if !welcome {
+                row("•", "This Mac") { MacRoleRow() }
+            }
+
+            // A workstation's agents (and their sign-ins, folders and phone link) all live on the server Mac.
+            if !Prefs.isWorkstation {
             row("1", "What should your agents call you?") {
                 TextField("Your name", text: $name).textFieldStyle(.roundedBorder).frame(maxWidth: 260)
                     .onSubmit(save)
@@ -263,6 +269,8 @@ struct SetupView: View {
                          : "Works on the same Wi-Fi. Only a device that scanned your code can get in. Switching this off unlinks every device.")
                         .font(.caption).foregroundStyle(Clay.inkSoft)
                 }
+            }
+
             }
 
             HStack {

@@ -39,12 +39,13 @@ struct CMessageApp: App {
                     Log.info("launch, claude=\(ClaudeRunner.claudePath ?? "MISSING")")
                     DispatchQueue.main.async { WindowRescue.run(atLaunch: true) }
                     // A one-contact build never listens on the network: no phone link, no relay.
-                    if !Flavor.solo { RemoteServer.shared.attach(store) }
+                    // A workstation is a screen for another Mac: it serves nothing itself.
+                    if !Flavor.solo && !store.isWorkstation { RemoteServer.shared.attach(store) }
                     #if CCHAT_SOLO
                     SoloExtras.attach(store)     // the one-contact build's own extras (e.g. a voice)
                     #endif
                     #if CCHAT_PERSONAL
-                    PersonalExtras.attach(store)     // the owner's own contacts and extras, kept out of the public repo
+                    if !store.isWorkstation { PersonalExtras.attach(store) }     // the owner's own contacts and extras, kept out of the public repo
                     #endif
                     // Self-install rebuilds from the personal build's own source folder, so it's personal-build only.
                     if Flavor.personal { SelfUpdate.start(store) }
@@ -82,13 +83,16 @@ struct CMessageApp: App {
             .keyboardShortcut("n")
         Button("Contacts") { NotificationCenter.default.post(name: .showContacts, object: nil) }
             .keyboardShortcut("k")
-        Button("Build My Team…") { NotificationCenter.default.post(name: .buildTeam, object: nil) }
-        Button("Show or Hide Terminal") { TerminalPool.shared.toggle() }
-            .keyboardShortcut("`", modifiers: .control)
-        Button("Start the Water Cooler Now") { WaterCooler.shared.start(store) }
-        Button("Water Cooler Ideas") { CoolerIdeas.open() }
-        Divider()
-        Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
+        // A workstation only has the chats: the team, terminal, Water Cooler and phone link belong to the server Mac.
+        if !store.isWorkstation {
+            Button("Build My Team…") { NotificationCenter.default.post(name: .buildTeam, object: nil) }
+            Button("Show or Hide Terminal") { TerminalPool.shared.toggle() }
+                .keyboardShortcut("`", modifiers: .control)
+            Button("Start the Water Cooler Now") { WaterCooler.shared.start(store) }
+            Button("Water Cooler Ideas") { CoolerIdeas.open() }
+            Divider()
+            Button("Connect iPhone or iPad…") { NotificationCenter.default.post(name: .showPairing, object: nil) }
+        }
     }
 }
 

@@ -145,7 +145,8 @@ struct RemoteSnapshot: Codable {
 }
 
 struct RPCRequest: Codable {
-    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, effort, plan, newProject, ask, media, chatter, team, leave, file, read, notify, away, ideas, sendIdeas, schedule, unschedule }
+    enum Op: String, Codable { case sync, send, rename, pin, stop, merge, markRead, open, icon, hide, setModel, effort, plan, newProject, ask, media, chatter, team, leave, file, read, notify, away, ideas, sendIdeas, schedule, unschedule,
+                             group, members, chrome, delete, addSub }
     var op: Op
     var ts: TimeInterval = Date().timeIntervalSince1970
     var nonce: String = UUID().uuidString
@@ -175,6 +176,9 @@ struct RPCRequest: Codable {
     /// `schedule`: when to send `text` (and `why`, e.g. "when your Claude limit resets", in `to`).
     /// `unschedule`: `target` = the scheduled text's id; `wait` true = send it right now instead of dropping it.
     var at: Date? = nil
+    /// `send` from a workstation Mac: documents (PDF, Word, spreadsheets...) by file name. `names` holds the names.
+    var files: [Data]? = nil
+    /// `group` / `members`: contact ids, in `names`. `addSub`: `text` = name, `to` = who they are.
 }
 
 struct RPCResponse: Codable {
@@ -191,6 +195,8 @@ struct RPCResponse: Codable {
     var isVideo: Bool? = nil
     /// `ideas`: the Water Cooler's ideas, each with the Mac's guess of its project.
     var ideas: [CoolerIdea]? = nil
+    /// `newProject` / `addSub`: the contact that was made.
+    var contactId: UUID? = nil
 }
 
 enum Seal {

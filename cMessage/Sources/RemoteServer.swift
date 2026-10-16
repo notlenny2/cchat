@@ -253,7 +253,9 @@ final class RemoteServer: ObservableObject {
             let pics = (req.images ?? []).prefix(RPCRequest.maxImages)
                 .compactMap { Store.importImage(data: $0, into: Store.attachmentsDir) }
             if !(req.images ?? []).isEmpty && pics.isEmpty { res.ok = false; res.error = "Couldn't read those pictures."; break }
-            store.send(req.text ?? "", in: c, attachments: pics, from: client)
+            // Documents from a workstation Mac go through the same import as a document dropped here.
+            let docs = zip(req.names ?? [], (req.files ?? []).prefix(RPCRequest.maxImages)).compactMap { Self.importDocument(name: $0, data: $1) }
+            store.send(req.text ?? "", in: c, attachments: pics + docs, from: client)
         case .ask:
             guard let t = req.text, !t.isEmpty else { res.ok = false; res.error = "Nothing to send."; break }
             guard let convId = req.conv ?? req.to.flatMap(store.findChat) else {
@@ -317,6 +319,9 @@ final class RemoteServer: ObservableObject {
             } else { res.ok = false }
         case .newProject:
             if let name = req.text, let c = try? store.createProject(named: name) {
+                res.contactId = c.id
+                // wait = false: only make it (a workstation's New Message picks it), don't open a chat.
+                if req.wait == false { break }
                 let before = store.selectedId
                 store.openChat(with: c, engine: req.engine ?? .claude, model: req.model)
                 res.convId = store.selectedId
@@ -330,6 +335,27 @@ final class RemoteServer: ObservableObject {
                                               opener: req.text ?? "", engine: req.engine ?? .claude, model: req.model)
                 store.selectedId = before
             } else { res.ok = false; res.error = "Pick a project and at least one team member." }
+        case .group:
+            // A new chat with these contacts (one = their 1:1), the same as New Message > Start here.
+            let ids = (req.names ?? []).compactMap(UUID.init(uuidString:)).filter { store.contact($0) != nil }
+            guard !ids.isEmpty else { res.ok = false; break }
+            let before = store.selectedId
+            store.openGroup(ids, title: req.to, engine: req.engine ?? .claude, model: req.model)
+            res.convId = store.selectedId
+            store.selectedId = before
+        case .members:
+            let ids = (req.names ?? []).compactMap(UUID.init(uuidString:)).filter { store.contact($0) != nil }
+            if let c = req.conv, !ids.isEmpty { store.setParticipants(c, ids, title: req.to) } else { res.ok = false }
+        case .chrome:
+            if let c = req.conv { store.setChrome(c, on: req.wait ?? true) } else { res.ok = false }
+        case .delete:
+            // Only the owner's own devices, never a paired agent.
+            if client == nil, let c = req.conv { store.deleteForever(c) } else { res.ok = false }
+        case .addSub:
+            let name = (req.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if client == nil, let id = req.contact, let p = store.contact(id), !p.isSubContact, !name.isEmpty {
+                res.contactId = store.addSubContact(to: p, name: String(name.prefix(60)), role: String((req.to ?? "").prefix(2000))).id
+            } else { res.ok = false }
         case .leave:
             if let c = req.conv, let who = req.contact { store.removeFromGroup(c, who) } else { res.ok = false }
         case .schedule:
@@ -356,6 +382,10 @@ final class RemoteServer: ObservableObject {
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                 if size < 200_000_000 { res.media = try? Data(contentsOf: url); res.isVideo = true }
                 else { res.ok = false; res.error = "Too big for the phone; open it on the Mac." }
+            } else if Documents.isDocument(url.path) {
+                // Documents whole (a workstation Mac opens them); the phone only shows their names.
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                if size < 20_000_000 { res.media = try? Data(contentsOf: url) } else { res.ok = false; res.error = "Too big to send over." }
             } else {
                 res.media = Self.scaled(url.path, maxSide: 1600)
             }
@@ -396,6 +426,18 @@ final class RemoteServer: ObservableObject {
                               models: Dictionary(uniqueKeysWithValues: store.availableEngines.map { ($0.rawValue, store.models(for: $0)) }),
                               usage: store.usage.isEmpty ? nil : store.usage,
                               team: store.team)
+    }
+
+    /// A document sent from a workstation: only its bare name is kept, and it's imported like a drop on this Mac.
+    private static func importDocument(name raw: String, data: Data) -> String? {
+        let name = URL(fileURLWithPath: raw).lastPathComponent
+        guard !name.isEmpty, !name.hasPrefix("."), Documents.isDocument(name) else { return nil }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil else { return nil }
+        let tmp = dir.appendingPathComponent(name)
+        guard (try? data.write(to: tmp)) != nil else { return nil }
+        return Documents.importFile(tmp, into: Store.attachmentsDir)
     }
 
     private static func scaled(_ path: String, maxSide: CGFloat) -> Data? {

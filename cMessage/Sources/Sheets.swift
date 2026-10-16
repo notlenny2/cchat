@@ -27,6 +27,8 @@ struct ContactsSheet: View {
             HStack {
                 Text("Contacts").font(.title2.bold())
                 Spacer()
+                // A workstation adds projects through New Message > New Project (made on the server Mac).
+                if !store.isWorkstation {
                 Menu {
                     ForEach(unaddedFolders, id: \.self) { u in
                         Button(u.lastPathComponent) { store.addProject(path: u.path) }
@@ -41,6 +43,7 @@ struct ContactsSheet: View {
                     }
                 } label: { Label("Add Project", systemImage: "plus") }
                 .fixedSize()
+                }
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
             .padding()
@@ -48,7 +51,7 @@ struct ContactsSheet: View {
                 Text(importNote).font(.callout).foregroundStyle(.secondary).padding(.bottom, 8)
             }
             Divider()
-            if store.projects.isEmpty {
+            if store.projects.isEmpty && !store.isWorkstation {
                 FirstProjectCard { dismiss() }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -96,8 +99,11 @@ struct ContactsSheet: View {
             Spacer()
             Button { store.openChat(with: c); dismiss() } label: { Image(systemName: "message.fill") }
                 .buttonStyle(.borderless).foregroundStyle(Palette.blue).help("Message")
-            Button { editing = c } label: { Image(systemName: "info.circle") }
-                .buttonStyle(.borderless).help("Info")
+            // Editing a contact (folder, picture, Full access) stays on the server Mac.
+            if !store.isWorkstation {
+                Button { editing = c } label: { Image(systemName: "info.circle") }
+                    .buttonStyle(.borderless).help("Info")
+            }
         }
         .padding(.vertical, 2)
     }
@@ -149,8 +155,9 @@ struct SubContactSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Add and Message") {
-                    let c = store.addSubContact(to: project, name: name.trimmingCharacters(in: .whitespaces), role: role)
-                    store.openChat(with: c)
+                    let n = name.trimmingCharacters(in: .whitespaces)
+                    if store.isWorkstation { store.addSubContactOnServer(to: project, name: n, role: role) }
+                    else { store.openChat(with: store.addSubContact(to: project, name: n, role: role)) }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -396,6 +403,16 @@ struct NewMessageSheet: View {
     }
 
     private func makeProject() {
+        if store.isWorkstation {
+            let name = newProject
+            Task {
+                if let id = await store.createProjectOnServer(named: name) {
+                    if !picked.contains(id) { picked.append(id) }
+                    newProject = ""; creating = false; createError = nil
+                } else { createError = "Couldn't make that project on \(store.link?.serverName ?? "the server")." }
+            }
+            return
+        }
         do {
             let c = try store.createProject(named: newProject)
             if !picked.contains(c.id) { picked.append(c.id) }

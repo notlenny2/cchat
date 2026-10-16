@@ -90,6 +90,14 @@ enum Prefs {
         set { d.set(newValue, forKey: "phoneNotify") }
     }
 
+    /// "server" (the default): agents run on this Mac. "workstation": this Mac only shows another Mac's chats, like the
+    /// phone does, and every button asks that Mac. Read once at launch; switching restarts the app.
+    static var isWorkstation: Bool {
+        // CCHAT_ROLE only exists so tests can run a workstation beside the live app.
+        get { (ProcessInfo.processInfo.environment["CCHAT_ROLE"] ?? d.string(forKey: "macRole")) == "workstation" }
+        set { d.set(newValue ? "workstation" : "server", forKey: "macRole") }
+    }
+
     /// The welcome screen has been finished. A personal build never shows it.
     static var setupDone: Bool {
         get { Flavor.personal || Flavor.solo || d.bool(forKey: "setupDone") }

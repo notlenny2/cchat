@@ -38,7 +38,7 @@ struct ContentView: View {
         } detail: {
             // The terminal lives in ChatView, as a fold-out row just above the text box.
             if let id = store.selectedId, store.index(of: id) != nil {
-                ChatView(convId: id, terminalFolder: terminalFolder).id(id)
+                ChatView(convId: id, terminalFolder: store.isWorkstation ? nil : terminalFolder).id(id)
             } else {
                 emptyState
             }
@@ -121,13 +121,19 @@ struct ContentView: View {
         .scrollContentBackground(.hidden)
         .background(Clay.sidebar)
         .safeAreaInset(edge: .bottom) {
-            if !store.usage.isEmpty { UsageMeter(report: store.usage).padding(10) }
+            VStack(spacing: 0) {
+                // A workstation says when it can't reach its server, so a quiet list doesn't look like quiet agents.
+                if let link = store.link, !store.conversations.isEmpty { WorkstationBanner(link: link) }
+                if !store.usage.isEmpty { UsageMeter(report: store.usage).padding(10) }
+            }
         }
         .searchable(text: $search, placement: .sidebar, prompt: "Search")
         .toolbar {
             ToolbarItemGroup {
-                Button { showPairing = true } label: { Image(systemName: "iphone") }
-                    .help("Connect iPhone or iPad")
+                if !store.isWorkstation {
+                    Button { showPairing = true } label: { Image(systemName: "iphone") }
+                        .help("Connect iPhone or iPad")
+                }
                 Button { showContacts = true } label: { Image(systemName: "person.crop.circle") }
                     .help("Contacts")
                 Button { showNew = true } label: { Image(systemName: "square.and.pencil") }
@@ -218,7 +224,9 @@ struct ContentView: View {
 
     private var emptyState: some View {
         Group {
-            if store.contacts.isEmpty {
+            if store.isWorkstation && store.contacts.isEmpty {
+                WorkstationEmpty()
+            } else if store.contacts.isEmpty {
                 // A brand-new user: no "go find a folder", just name a project and start texting.
                 FirstProjectCard()
             } else {

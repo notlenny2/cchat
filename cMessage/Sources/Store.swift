@@ -40,6 +40,12 @@ final class Store: ObservableObject {
 
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Set when this Mac is a workstation: it shows the server Mac's chats and every change goes there (see ServerLink).
+    private(set) var link: ServerLink?
+    var isWorkstation: Bool { link != nil }
+    /// Chats the server is working on right now (a workstation has no turns of its own).
+    private var remoteBusy: Set<UUID> = []
+
     static let fileURL: URL = {
         // CMESSAGE_DATA_DIR lets tests run against a throwaway copy instead of your real chats.
         let dir = ProcessInfo.processInfo.environment["CMESSAGE_DATA_DIR"].map { URL(fileURLWithPath: $0) }
@@ -56,7 +62,17 @@ final class Store: ObservableObject {
     }()
     private var usageTimer: Timer?
 
+    /// The app's one store, for the few places outside the views that need it (Settings' role switch).
+    private(set) static weak var shared: Store?
+    static var anyBusy: Bool { shared.map { s in s.conversations.contains { s.isBusy($0.id) } } ?? false }
+
     init() {
+        Self.shared = self
+        // A workstation keeps this Mac's own chats untouched on disk and runs nothing: no agents, timers or backups.
+        if Prefs.isWorkstation && !Flavor.solo {
+            link = ServerLink(store: self)
+            return
+        }
         load(); flagUnanswered()
         if Flavor.solo { settleSolo() } else { findMissingIcons() }
         ClaudeRunner.onUsage = { u in Task { @MainActor [weak self] in self?.setUsage(claude: u) } }
@@ -123,6 +139,7 @@ final class Store: ObservableObject {
     }
 
     func setContactPhoto(_ contactId: UUID, path: String) {
+        if isWorkstation { return }
         guard let i = contacts.firstIndex(where: { $0.id == contactId }) else { return }
         contacts[i].iconPath = path
         contacts[i].iconSearched = true
@@ -130,12 +147,14 @@ final class Store: ObservableObject {
     }
 
     func setGroupPhoto(_ convId: UUID, path: String) {
+        if isWorkstation { return }
         guard let i = index(of: convId) else { return }
         conversations[i].photoPath = path
         save()
     }
 
     func setContactPhoto(_ contactId: UUID, from url: URL) {
+        if isWorkstation { return }
         guard let i = contacts.firstIndex(where: { $0.id == contactId }),
               let path = Store.importImage(url, into: Store.photosDir) else { return }
         contacts[i].iconPath = path
@@ -144,6 +163,7 @@ final class Store: ObservableObject {
     }
 
     func setGroupPhoto(_ convId: UUID, from url: URL) {
+        if isWorkstation { return }
         guard let i = index(of: convId), let path = Store.importImage(url, into: Store.photosDir) else { return }
         conversations[i].photoPath = path
         save()
@@ -201,6 +221,7 @@ final class Store: ObservableObject {
 
     func save() {
         version += 1
+        if isWorkstation { return }
         do {
             let data = try JSONEncoder().encode(StoreData(contacts: contacts, conversations: conversations, team: ownTeam))
             try data.write(to: Self.fileURL, options: [.atomic])
@@ -208,6 +229,48 @@ final class Store: ObservableObject {
         // Dock icon shows how many chats are waiting on the user.
         let waiting = conversations.filter { $0.needsYou != nil && !$0.hidden }.count
         NSApp?.dockTile.badgeLabel = waiting > 0 ? "\(waiting)" : nil
+    }
+
+    /// A workstation's copy of the server's chats, refreshed on every sync. Attachments point at the copies fetched
+    /// so far; one not fetched yet stays out of its bubble until it arrives.
+    func mirror(_ s: RemoteSnapshot?, link: ServerLink) {
+        guard let s else {
+            contacts = []; conversations = []; typing = [:]; waitingFor = [:]; smartNow = [:]; remoteBusy = []
+            return
+        }
+        contacts = s.contacts.map { r in
+            var c = Contact(id: r.id, name: r.name,
+                            projectPath: r.noProject == true ? Prefs.home.path : "/\(link.serverName)/\(r.folder)",
+                            parentId: r.parentId, role: r.role, colorIndex: r.colorIndex)
+            if r.hasIcon && (r.parentId == nil || r.ownIcon == true) { c.iconPath = link.localIcon(r.id) }
+            c.iconSearched = true
+            return c
+        }
+        conversations = s.conversations.map { conv in
+            var conv = conv
+            conv.messages = conv.messages.map { m in
+                var m = m
+                if let a = m.attachments { let here = a.compactMap(link.localMedia); m.attachments = here.isEmpty ? nil : here }
+                return m
+            }
+            return conv
+        }
+        if typing != s.typing { typing = s.typing }
+        if waitingFor != (s.waitingFor ?? [:]) { waitingFor = s.waitingFor ?? [:] }
+        if smartNow != (s.smartNow ?? [:]) { smartNow = s.smartNow ?? [:] }
+        remoteBusy = Set(s.busy)
+        if let u = s.usage, u != usage { usage = u }
+        ownTeam = s.team
+        remoteModels = s.models ?? [:]
+        let waiting = conversations.filter { $0.needsYou != nil && !$0.hidden }.count
+        NSApp?.dockTile.badgeLabel = waiting > 0 ? "\(waiting)" : nil
+    }
+    private var remoteModels: [String: [ModelOption]] = [:]
+
+    /// Opens the chat the server just made or found, as soon as it shows up here.
+    private func select(_ convId: UUID?) {
+        guard let convId else { return }
+        selectedId = convId
     }
 
     // MARK: Lookup
@@ -240,6 +303,7 @@ final class Store: ObservableObject {
     /// Files a chat under another folder of the chat list (a project's id or `ChatFolders.other`). Filing it back
     /// under its own project clears the override.
     func file(_ convId: UUID, into folder: String) {
+        if let link { link.fire(RPCRequest(op: .file, conv: convId, text: folder)); return }
         guard let i = index(of: convId) else { return }
         let own = conversations[i].participantIds.first.flatMap(projectOf)?.id.uuidString ?? ChatFolders.other
         conversations[i].folder = folder == own ? nil : folder
@@ -247,6 +311,7 @@ final class Store: ObservableObject {
     }
 
     func togglePin(_ convId: UUID) {
+        if let link { link.fire(RPCRequest(op: .pin, conv: convId)); return }
         guard let i = index(of: convId) else { return }
         conversations[i].pinned = conversations[i].isPinned ? nil : true
         // A newly pinned chat goes to the end of the pinned row.
@@ -272,6 +337,7 @@ final class Store: ObservableObject {
 
     /// Folders in ~/projects that aren't contacts yet, so any project can be texted straight from New Message.
     var unaddedFolders: [URL] {
+        if isWorkstation { return [] }
         let taken = Set(projects.map(\.projectPath))
         let items = (try? FileManager.default.contentsOfDirectory(at: Self.projectsRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
         return items.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true && !taken.contains($0.path) }
@@ -314,6 +380,7 @@ final class Store: ObservableObject {
 
     @discardableResult
     func addProject(path: String) -> Contact {
+        if isWorkstation { return Contact(name: prettify(URL(fileURLWithPath: path).lastPathComponent), projectPath: path) }
         if let existing = contacts.first(where: { !$0.isSubContact && $0.projectPath == path }) { return existing }
         let folder = URL(fileURLWithPath: path).lastPathComponent
         let c = Contact(name: prettify(folder), projectPath: path, colorIndex: contacts.count)
@@ -321,6 +388,20 @@ final class Store: ObservableObject {
         save()
         findMissingIcons()
         return c
+    }
+
+    /// A workstation's New Project: made on the server Mac (wait false = don't open a chat), its contact id back.
+    func createProjectOnServer(named name: String) async -> UUID? {
+        await link?.ask(RPCRequest(op: .newProject, text: name, wait: false))?.contactId
+    }
+
+    /// A workstation's new sub-contact, made on the server; then its chat opens.
+    func addSubContactOnServer(to project: Contact, name: String, role: String) {
+        guard let link else { return }
+        Task {
+            guard let id = await link.ask(RPCRequest(op: .addSub, contact: project.id, text: name, to: role))?.contactId else { return }
+            select(await link.ask(RPCRequest(op: .open, contact: id, text: Engine.claude.rawValue, model: ""))?.convId)
+        }
     }
 
     @discardableResult
@@ -334,6 +415,7 @@ final class Store: ObservableObject {
     }
 
     func update(_ c: Contact) {
+        if isWorkstation { return }
         guard let i = contacts.firstIndex(where: { $0.id == c.id }) else { return }
         let old = contacts[i]
         contacts[i] = c
@@ -347,6 +429,7 @@ final class Store: ObservableObject {
     }
 
     func delete(_ c: Contact) {
+        if isWorkstation { return }
         let ids = Set([c.id] + subContacts(of: c.id).map(\.id))
         for id in ids { stopAll(involving: id) }
         contacts.removeAll { ids.contains($0.id) }
@@ -360,6 +443,7 @@ final class Store: ObservableObject {
 
     /// Wipes this contact's memory in every chat. Next message starts a fresh Claude session.
     func forget(_ c: Contact) {
+        if isWorkstation { return }
         for i in conversations.indices where conversations[i].sessions[c.id.uuidString] != nil {
             conversations[i].sessions[c.id.uuidString] = nil
             conversations[i].messages.append(Message(senderId: nil, text: "\(displayName(c)) is starting with a fresh memory.", kind: .system))
@@ -371,6 +455,7 @@ final class Store: ObservableObject {
 
     /// Opens (or brings back) the 1:1 chat with a contact, memory intact.
     func models(for engine: Engine) -> [ModelOption] {
+        if isWorkstation { return remoteModels[engine.rawValue] ?? (engine == .claude ? ModelCatalog.claude : [ModelOption(id: "", label: "Default", note: "")]) }
         switch engine {
         case .claude: return ModelCatalog.claude
         case .codex: return ClaudeRunner.codexModels
@@ -381,7 +466,8 @@ final class Store: ObservableObject {
 
     /// Engines a new chat can pick: Claude always, the others only when their command-line tool is on this Mac.
     var availableEngines: [Engine] {
-        Engine.allCases.filter { e in
+        if isWorkstation { return Engine.allCases.filter { $0 == .claude || remoteModels[$0.rawValue] != nil } }
+        return Engine.allCases.filter { e in
             switch e {
             case .claude: return true
             case .codex: return ClaudeRunner.codexPath != nil
@@ -415,6 +501,7 @@ final class Store: ObservableObject {
     static let goAhead = "Go ahead with the plan"
 
     func setEffort(_ convId: UUID, _ effort: String?) {
+        if let link { link.fire(RPCRequest(op: .effort, conv: convId, model: effort ?? "")); return }
         guard let i = index(of: convId) else { return }
         conversations[i].effort = (effort?.isEmpty ?? true) ? nil : effort
         let label = ModelCatalog.label(conversations[i].effort, in: ModelCatalog.efforts) ?? "Auto"
@@ -423,6 +510,7 @@ final class Store: ObservableObject {
     }
 
     func setChrome(_ convId: UUID, on: Bool) {
+        if let link { link.fire(RPCRequest(op: .chrome, conv: convId, wait: on)); return }
         guard let i = index(of: convId), conversations[i].canUseChrome != on else { return }
         conversations[i].chrome = on ? nil : false
         conversations[i].messages.append(Message(senderId: nil, text: on
@@ -432,6 +520,7 @@ final class Store: ObservableObject {
     }
 
     func setPlanning(_ convId: UUID, on: Bool) {
+        if let link { link.fire(RPCRequest(op: .plan, conv: convId, wait: on)); return }
         guard let i = index(of: convId), conversations[i].isPlanning != on else { return }
         conversations[i].planning = on ? true : nil
         conversations[i].messages.append(Message(senderId: nil, text: on
@@ -441,6 +530,7 @@ final class Store: ObservableObject {
     }
 
     func setModel(_ convId: UUID, _ model: String?) {
+        if let link { link.fire(RPCRequest(op: .setModel, conv: convId, model: model ?? "")); return }
         guard let i = index(of: convId) else { return }
         conversations[i].model = (model?.isEmpty ?? true) ? nil : model
         conversations[i].messages.append(Message(senderId: nil, text: "Now using \(modelSummary(conversations[i])).", kind: .system))
@@ -448,6 +538,10 @@ final class Store: ObservableObject {
     }
 
     func openChat(with c: Contact, engine: Engine = .claude, model: String? = nil) {
+        if let link {
+            Task { select(await link.ask(RPCRequest(op: .open, contact: c.id, text: engine.rawValue, model: model ?? ""))?.convId) }
+            return
+        }
         if let i = conversations.firstIndex(where: { $0.participantIds == [c.id] && ($0.engine ?? .claude) == engine }) {
             conversations[i].hidden = false
             selectedId = conversations[i].id
@@ -464,6 +558,12 @@ final class Store: ObservableObject {
     /// Named "<Name> 2", "<Name> 3"... so it doesn't look like a copy of the first one in the list.
     @discardableResult
     func newChat(with c: Contact, engine: Engine = .claude, model: String? = nil) -> UUID {
+        if let link {
+            var r = RPCRequest(op: .open, contact: c.id, text: engine.rawValue, model: model ?? "")
+            r.fresh = true
+            Task { select(await link.ask(r)?.convId) }
+            return c.id
+        }
         let taken = Set(conversations.map { title(for: $0) })
         var n = 2, name = c.name
         if taken.contains(name) { while taken.contains("\(c.name) \(n)") { n += 1 }; name = "\(c.name) \(n)" }
@@ -476,6 +576,12 @@ final class Store: ObservableObject {
     }
 
     func openGroup(_ ids: [UUID], title: String?, engine: Engine = .claude, model: String? = nil) {
+        if let link {
+            var r = RPCRequest(op: .group, text: nil, model: model ?? "", engine: engine, names: ids.map(\.uuidString))
+            r.to = title
+            Task { select(await link.ask(r)?.convId) }
+            return
+        }
         if ids.count == 1, let c = contact(ids[0]) { openChat(with: c, engine: engine, model: model); return }
         let conv = Conversation(participantIds: ids, title: title?.isEmpty == true ? nil : title,
                                 engine: engine == .claude ? nil : engine, model: (model?.isEmpty ?? true) ? nil : model)
@@ -485,6 +591,12 @@ final class Store: ObservableObject {
     }
 
     func hide(_ convId: UUID) {
+        if let link {
+            link.fire(RPCRequest(op: .hide, conv: convId))
+            if selectedId == convId { selectedId = nil }
+            conversations.removeAll { $0.id == convId }
+            return
+        }
         guard let i = index(of: convId) else { return }
         stop(convId)
         conversations[i].hidden = true
@@ -493,6 +605,12 @@ final class Store: ObservableObject {
     }
 
     func deleteForever(_ convId: UUID) {
+        if let link {
+            link.fire(RPCRequest(op: .delete, conv: convId))
+            if selectedId == convId { selectedId = nil }
+            conversations.removeAll { $0.id == convId }
+            return
+        }
         stop(convId)
         conversations.removeAll { $0.id == convId }
         if selectedId == convId { selectedId = nil }
@@ -500,6 +618,12 @@ final class Store: ObservableObject {
     }
 
     func setParticipants(_ convId: UUID, _ ids: [UUID], title: String?) {
+        if let link {
+            var r = RPCRequest(op: .members, conv: convId, names: ids.map(\.uuidString))
+            r.to = title ?? ""
+            link.fire(r)
+            return
+        }
         guard let i = index(of: convId) else { return }
         let before = conversations[i].participantIds
         if conversations[i].isGroup {
@@ -524,6 +648,7 @@ final class Store: ObservableObject {
     }
 
     func rename(_ convId: UUID, to title: String) {
+        if let link { link.fire(RPCRequest(op: .rename, conv: convId, text: title)); return }
         guard let i = index(of: convId) else { return }
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         conversations[i].title = t.isEmpty ? nil : t
@@ -535,6 +660,11 @@ final class Store: ObservableObject {
     /// from (a forked copy, so the original chat is untouched).
     @discardableResult
     func merge(_ sourceId: UUID, into targetId: UUID) -> UUID? {
+        if let link {
+            guard sourceId != targetId else { return nil }
+            Task { select(await link.ask(RPCRequest(op: .merge, conv: sourceId, target: targetId))?.convId) }
+            return targetId
+        }
         guard sourceId != targetId, let s = index(of: sourceId), let t = index(of: targetId) else { return nil }
         let source = conversations[s], target = conversations[t]
         var ids = target.participantIds
@@ -575,6 +705,12 @@ final class Store: ObservableObject {
     }
 
     func markRead(_ convId: UUID) {
+        if let link {
+            guard let i = index(of: convId), conversations[i].unread else { return }
+            conversations[i].unread = false
+            link.fire(RPCRequest(op: .markRead, conv: convId))
+            return
+        }
         guard let i = index(of: convId), conversations[i].unread else { return }
         conversations[i].unread = false
         save()
@@ -583,6 +719,13 @@ final class Store: ObservableObject {
     /// The user's "I've seen it, stop flagging it": clears the unread dot AND the Needs-you tag (which otherwise
     /// waits for the user to text that chat). `unread: true` puts the dot back.
     func setRead(_ ids: [UUID], unread: Bool = false) {
+        if let link {
+            for id in ids {
+                if let i = index(of: id) { conversations[i].unread = unread; if !unread { conversations[i].needsYou = nil } }
+                link.fire(RPCRequest(op: .read, conv: id, wait: !unread))
+            }
+            return
+        }
         var changed = false
         for id in ids {
             guard let i = index(of: id) else { continue }
@@ -638,6 +781,18 @@ final class Store: ObservableObject {
 
     /// `everyone`: every member of a group answers (Director last), no router. Used when the team is called in.
     func send(_ raw: String, in convId: UUID, attachments: [String] = [], from: String? = nil, everyone: Bool = false) {
+        if let link {
+            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty || !attachments.isEmpty, let i = index(of: convId) else { return }
+            link.send(text, in: convId, attachments: attachments)
+            // Shown straight away; the server's copy replaces it a moment later.
+            conversations[i].messages.append(Message(senderId: nil, text: text, attachments: attachments.isEmpty ? nil : attachments))
+            conversations[i].needsYou = nil
+            conversations[i].suggestions = []
+            if typing[convId] == nil { typing[convId] = conversations[i].isGroup ? Store.routerId : conversations[i].participantIds.first }
+            onUserSend?(convId)
+            return
+        }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, let i = index(of: convId) else { return }
         var m = Message(senderId: nil, text: text, attachments: attachments.isEmpty ? nil : attachments)
@@ -669,6 +824,14 @@ final class Store: ObservableObject {
     // MARK: Send later
 
     func schedule(_ raw: String, in convId: UUID, at: Date, why: String? = nil, attachments: [String] = [], from: String? = nil) {
+        if let link {
+            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            var r = RPCRequest(op: .schedule, conv: convId, text: text, to: why)
+            r.at = at
+            link.fire(r)
+            return
+        }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, let i = index(of: convId) else { return }
         var list = conversations[i].scheduled ?? []
@@ -680,6 +843,7 @@ final class Store: ObservableObject {
 
     /// Drops a waiting text, or (`now`) sends it straight away.
     func unschedule(_ id: UUID, in convId: UUID, sendNow: Bool = false) {
+        if let link { link.fire(RPCRequest(op: .unschedule, conv: convId, target: id, wait: sendNow)); return }
         guard let i = index(of: convId), let s = conversations[i].scheduled?.first(where: { $0.id == id }) else { return }
         conversations[i].scheduled?.removeAll { $0.id == id }
         if conversations[i].scheduled?.isEmpty == true { conversations[i].scheduled = nil }
@@ -689,6 +853,7 @@ final class Store: ObservableObject {
     /// Sends everything that's come due. Runs every 15 seconds and at launch (anything missed while cChat was
     /// closed goes out then, with a note saying so).
     func sendDue(now: Date = Date()) {
+        if isWorkstation { return }
         for conv in conversations {
             for s in conv.scheduled ?? [] where s.at <= now {
                 guard let i = index(of: conv.id) else { continue }
@@ -708,6 +873,7 @@ final class Store: ObservableObject {
     static let chatterLimit = 6
 
     func setChatter(_ convId: UUID, on: Bool) {
+        if let link { link.fire(RPCRequest(op: .chatter, conv: convId, wait: on)); return }
         guard let i = index(of: convId) else { return }
         conversations[i].chatter = on ? nil : false
         conversations[i].messages.append(Message(senderId: nil, text: on ? "They can talk to each other again." : "They'll only answer you from now on.", kind: .system))
@@ -818,9 +984,10 @@ final class Store: ObservableObject {
         return directorsLast(people)
     }
 
-    func isBusy(_ convId: UUID) -> Bool { tasks[convId] != nil }
+    func isBusy(_ convId: UUID) -> Bool { isWorkstation ? remoteBusy.contains(convId) : tasks[convId] != nil }
 
     func stop(_ convId: UUID) {
+        if let link { link.fire(RPCRequest(op: .stop, conv: convId)); typing[convId] = nil; return }
         tasks[convId]?.cancel()
         tasks[convId] = nil
         typing[convId] = nil
@@ -1331,6 +1498,7 @@ final class Store: ObservableObject {
 
     /// Saves the user's own team (nil goes back to the classic seven). Blank seats are dropped.
     func setTeam(_ members: [TeamMember]?) {
+        if isWorkstation { return }
         let kept = members?.filter { !$0.isBlank }
         ownTeam = (kept?.isEmpty ?? true) ? nil : kept
         save()
@@ -1373,6 +1541,12 @@ final class Store: ObservableObject {
     func callInTeam(on project: Contact, members: [TeamMember], asGroup: Bool, opener: String,
                     engine: Engine = .claude, model: String? = nil) -> UUID? {
         guard !members.isEmpty, !project.isSubContact else { return nil }
+        if let link {
+            let r = RPCRequest(op: .team, contact: project.id, text: opener, model: model ?? "", engine: engine, wait: asGroup,
+                               names: members.map(\.name))
+            Task { select(await link.ask(r)?.convId) }
+            return nil
+        }
         let existing = subContacts(of: project.id)
         let people: [Contact] = members.map { m in
             let name = m.name.trimmingCharacters(in: .whitespacesAndNewlines)
