@@ -66,10 +66,14 @@ final class RemoteClient: ObservableObject {
 
     func start() {
         guard pairing != nil, loop == nil else { return }
+        // Coming back to the app isn't a lost connection: no banner while it reconnects.
+        if case .offline = link { link = .connecting }
         loop = Task { [weak self] in
-            // Start on an address that actually answers, not whichever was listed first; else the relay.
-            await self?.pickRoute()
+            // Start on an address that actually answers, not whichever was listed first; else the relay. Already on the
+            // relay (away from home): stay on it and look for home later, instead of waiting out the home addresses first.
+            if self?.viaRelay != true { await self?.pickRoute() }
             var cycles = 0
+            var misses = 0
             while !Task.isCancelled {
                 guard let self else { return }
                 // On the relay, look for home every few minutes: the direct way is quicker when it's there.
@@ -82,22 +86,32 @@ final class RemoteClient: ObservableObject {
                         self.fetchMissingIcons(s)
                     }
                     self.link = .online
-                } catch is CancellationError {
-                    return
+                    misses = 0
                 } catch {
-                    var why = Self.describe(error, relay: self.viaRelay)
-                    if !self.viaRelay, self.relayBase == nil, let p = self.pairing, !p.hosts.isEmpty,
-                       await Self.localNetworkDenied(host: p.hosts[self.hostIndex % p.hosts.count], port: p.port) {
-                        why = "iPhone is blocking cChat from your home network. Turn on Settings > Privacy & Security > Local Network > cChat."
+                    if Task.isCancelled || Self.cancelled(error) { return }
+                    misses += 1
+                    // One miss is usually a blip (the relay or Wi-Fi hiccupping for a second): retry at once, quietly.
+                    // Only say it's offline when it keeps failing, or the Mac flatly refused us.
+                    if misses >= 3 || error as? ClientError == .rejected {
+                        var why = Self.describe(error, relay: self.viaRelay)
+                        if !self.viaRelay, self.relayBase == nil, let p = self.pairing, !p.hosts.isEmpty,
+                           await Self.localNetworkDenied(host: p.hosts[self.hostIndex % p.hosts.count], port: p.port) {
+                            why = "iPhone is blocking cChat from your home network. Turn on Settings > Privacy & Security > Local Network > cChat."
+                        }
+                        self.link = .offline(why)
                     }
-                    self.link = .offline(why)
                     // Try every address the Mac gave at once and keep whichever answers, instead of waiting out a
                     // dead one (a Mac on Wi-Fi AND a cable can be reachable on only one of them). None: the relay.
                     await self.pickRoute()
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    try? await Task.sleep(nanoseconds: misses == 1 ? 500_000_000 : 3_000_000_000)
                 }
             }
         }
+    }
+
+    /// The loop was stopped (app went to the background), which URLSession reports as its own error.
+    private static func cancelled(_ e: Error) -> Bool {
+        e is CancellationError || (e as? URLError)?.code == .cancelled
     }
 
     func stop() {
@@ -151,8 +165,8 @@ final class RemoteClient: ObservableObject {
         guard !jpegs.isEmpty else { return false }
         var req = RPCRequest(op: .send, conv: conv, text: text)
         req.images = jpegs
-        do { return try await call(req).ok }
-        catch { link = .offline(Self.describe(error)); return false }
+        do { return try await deliver(req).ok }
+        catch { link = .offline(Self.describe(error, relay: viaRelay)); return false }
     }
 
     /// Longest side 2048px, JPEG: a 12MP photo goes from ~5 MB to a few hundred KB, still plenty for an agent to read.
@@ -256,8 +270,25 @@ final class RemoteClient: ObservableObject {
 
     private func fire(_ req: RPCRequest) {
         Task {
-            do { _ = try await call(req) }
-            catch { link = .offline(Self.describe(error)) }
+            do { _ = try await deliver(req) }
+            catch { link = .offline(Self.describe(error, relay: viaRelay)) }
+        }
+    }
+
+    /// A tap or a text shouldn't be lost to a one-second hiccup: try up to three times, finding a working route in
+    /// between. The retry carries the same one-time code, so if the first try did get through, the Mac refuses the
+    /// repeat (it never runs twice) and that refusal means it's already done.
+    private func deliver(_ req: RPCRequest) async throws -> RPCResponse {
+        var tries = 0
+        while true {
+            do { return try await call(req) }
+            catch ClientError.rejected where tries > 0 { return RPCResponse(nonce: req.nonce, ok: true) }
+            catch {
+                tries += 1
+                if tries >= 3 || Self.cancelled(error) || error as? ClientError == .rejected { throw error }
+                await pickRoute()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
         }
     }
 
@@ -301,7 +332,7 @@ final class RemoteClient: ObservableObject {
         return res
     }
 
-    enum ClientError: Error { case rejected, http(Int), mismatch }
+    enum ClientError: Error, Equatable { case rejected, http(Int), mismatch }
 
     /// The earliest-listed host that accepts a connection, all tried at the same time (a few seconds at most).
     /// The Mac lists its best address first, so list order wins over whichever answered quickest.

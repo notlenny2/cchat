@@ -86,8 +86,13 @@ export class Mailbox {
     if (!this.take()) return text(429, "slow down");
     const len = Number(request.headers.get("Content-Length") || "0");
     if (len > MAX_BODY) return text(413, "too big");
-    const sockets = this.ctx.getWebSockets().filter((s) => s.readyState === WebSocket.OPEN);
-    const mac = sockets[sockets.length - 1];
+    // The computer's connection drops now and then and is back within a couple of seconds; wait that out
+    // instead of telling the phone it's offline.
+    let mac = this.openMac();
+    for (let i = 0; !mac && i < 24; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      mac = this.openMac();
+    }
     if (!mac) return text(503, "computer offline");
     if (this.pending.size >= MAX_PENDING) return text(429, "busy");
 
@@ -111,6 +116,11 @@ export class Mailbox {
       return text(503, "computer offline");
     }
     return answer;
+  }
+
+  openMac() {
+    const sockets = this.ctx.getWebSockets().filter((s) => s.readyState === WebSocket.OPEN);
+    return sockets[sockets.length - 1];
   }
 
   // The computer asks for a notification on its phone ("Website: done, the page is up").

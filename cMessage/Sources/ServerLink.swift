@@ -89,6 +89,7 @@ final class ServerLink: ObservableObject {
         loop = Task { [weak self] in
             await self?.pickRoute()
             var cycles = 0
+            var misses = 0
             while !Task.isCancelled {
                 guard let self else { return }
                 cycles += 1
@@ -97,12 +98,16 @@ final class ServerLink: ObservableObject {
                     let res = try await self.call(RPCRequest(op: .sync, since: self.snapshot?.version ?? -1))
                     if let s = res.snapshot { self.apply(s) }
                     self.state = .online
-                } catch is CancellationError {
-                    return
+                    misses = 0
                 } catch {
-                    self.state = .offline(Self.describe(error, relay: self.viaRelay, server: self.serverName))
+                    if Task.isCancelled || Self.cancelled(error) { return }
+                    // One miss is usually a blip (the relay or Wi-Fi hiccupping): retry at once, quietly.
+                    misses += 1
+                    if misses >= 3 || error as? LinkError == .rejected {
+                        self.state = .offline(Self.describe(error, relay: self.viaRelay, server: self.serverName))
+                    }
                     await self.pickRoute()
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    try? await Task.sleep(nanoseconds: misses == 1 ? 500_000_000 : 3_000_000_000)
                 }
             }
         }
@@ -183,10 +188,30 @@ final class ServerLink: ObservableObject {
     func fire(_ req: RPCRequest) {
         Task {
             do {
-                let res = try await call(req)
+                let res = try await deliver(req)
                 if !res.ok { Log.error("workstation: \(req.op.rawValue) refused: \(res.error ?? "?")") }
             } catch { state = .offline(Self.describe(error, relay: viaRelay, server: serverName)) }
         }
+    }
+
+    /// Up to three tries with a fresh route in between. The repeat carries the same one-time code, so if the first
+    /// try did get through the server refuses it (never runs it twice), and that refusal means it's done.
+    private func deliver(_ req: RPCRequest) async throws -> RPCResponse {
+        var tries = 0
+        while true {
+            do { return try await call(req) }
+            catch LinkError.rejected where tries > 0 { return RPCResponse(nonce: req.nonce, ok: true) }
+            catch {
+                tries += 1
+                if tries >= 3 || Self.cancelled(error) || error as? LinkError == .rejected { throw error }
+                await pickRoute()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private static func cancelled(_ e: Error) -> Bool {
+        e is CancellationError || (e as? URLError)?.code == .cancelled
     }
 
     func ask(_ req: RPCRequest) async -> RPCResponse? {
@@ -246,7 +271,7 @@ final class ServerLink: ObservableObject {
         return res
     }
 
-    enum LinkError: Error { case rejected, http(Int), mismatch }
+    enum LinkError: Error, Equatable { case rejected, http(Int), mismatch }
 
     private static func firstReachable(_ hosts: [String], port: UInt16) async -> Int? {
         await withTaskGroup(of: Int?.self) { group in
