@@ -337,7 +337,10 @@ struct PinnedGrid: View {
     private func tile(_ c: Conversation) -> some View {
                 Button { selected = c.id } label: {
                     VStack(spacing: 4) {
+                        // Ring and glow go on first, so the typing bubble sits on top of them instead of being cut.
                         GroupAvatar(ids: c.participantIds, size: 58, photo: c.photoPath)
+                            .background(Circle().stroke(ring(c), lineWidth: 2.5).padding(-3))
+                            .pulseGlow(glow(c))
                             .overlay(alignment: .topTrailing) {
                                 if store.typing[c.id] != nil {
                                     TypingDots(dot: 4)
@@ -346,8 +349,6 @@ struct PinnedGrid: View {
                                         .offset(x: 8, y: -4)
                                 }
                             }
-                            .overlay(Circle().stroke(ring(c), lineWidth: 2.5).padding(-3))
-                            .pulseGlow(glow(c))
                         HStack(spacing: 4) {
                             if c.unread { Circle().fill(Palette.blue).frame(width: 7, height: 7).pulseGlow(Palette.blue, ring: false) }
                             Text(store.title(for: c)).zfont(.caption).lineLimit(1)
