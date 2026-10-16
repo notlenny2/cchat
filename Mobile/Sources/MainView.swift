@@ -51,7 +51,7 @@ struct MainView: View {
             if case .offline(let why) = client.link {
                 Label(why, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.orange)
             }
-            let pinned = client.conversations.filter(\.isPinned)
+            let pinned = client.pinnedConversations
             if !pinned.isEmpty {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 14) {
                     ForEach(pinned) { c in

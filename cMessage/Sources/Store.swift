@@ -222,7 +222,8 @@ final class Store: ObservableObject {
     var visibleConversations: [Conversation] {
         conversations.filter { !$0.hidden }.sorted { $0.lastDate > $1.lastDate }
     }
-    var pinnedConversations: [Conversation] { visibleConversations.filter(\.isPinned) }
+    /// Pinned chats keep the order they were pinned in (stored order), so new messages never shuffle the row.
+    var pinnedConversations: [Conversation] { conversations.filter { !$0.hidden && $0.isPinned } }
 
     /// A contact's top-level project, for the chat list's folders. nil when it has no project folder of its own
     /// (some NodeTerm imports point at the home folder).
@@ -248,6 +249,8 @@ final class Store: ObservableObject {
     func togglePin(_ convId: UUID) {
         guard let i = index(of: convId) else { return }
         conversations[i].pinned = conversations[i].isPinned ? nil : true
+        // A newly pinned chat goes to the end of the pinned row.
+        if conversations[i].isPinned { conversations.append(conversations.remove(at: i)) }
         save()
     }
 

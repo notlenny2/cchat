@@ -375,6 +375,8 @@ final class RemoteClient: ObservableObject {
     func contact(_ id: UUID?) -> RemoteContact? { snapshot?.contacts.first { $0.id == id } }
     func conversation(_ id: UUID?) -> Conversation? { snapshot?.conversations.first { $0.id == id } }
 
+    /// In the Mac's stored order (the order they were pinned), not by newest message.
+    var pinnedConversations: [Conversation] { (snapshot?.conversations ?? []).filter(\.isPinned) }
     var conversations: [Conversation] {
         (snapshot?.conversations ?? []).sorted { $0.lastDate > $1.lastDate }
     }
