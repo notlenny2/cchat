@@ -421,13 +421,11 @@ struct Bubble: View {
             .textSelection(.enabled)
             .padding(.horizontal, 13).padding(.vertical, 8)
             .foregroundStyle(mine ? .white : Clay.ink)
+            .tint(mine ? .white : Clay.terracotta)
             .background(bubble)
     }
 
-    private var rendered: AttributedString {
-        (try? AttributedString(markdown: message.text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(message.text)
-    }
+    private var rendered: AttributedString { LinkText.render(message.text, mine: mine) }
 
     @ViewBuilder private var bubble: some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
